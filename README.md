@@ -57,3 +57,22 @@ sample-data/resume.txt
 and upload it to your configured S3 bucket.
 
 The sample-data directory is ignored by Git to prevent accidental publication of personal information.
+
+## Future Enhancements
+
+### AI Improvements
+- Replace keyword matching with semantic similarity using sentence embeddings.
+- Support PDF resumes instead of plain text files.
+- Add weighted scoring for skills, certifications, and experience.
+- Add support for multiple resumes and candidate ranking.
+
+### AWS Enhancements
+- Automate deployments using GitHub Actions and AWS Lambda.
+- Manage infrastructure with AWS SAM, CDK, or Terraform.
+- Add authentication and authorization to the API.
+
+### Amazon Bedrock Integration (Future)
+- Replace local embedding generation with Amazon Titan Embeddings via Amazon Bedrock.
+- Compare local embeddings versus Bedrock embeddings for match quality.
+- Explore Retrieval-Augmented Generation (RAG) to explain why a resume matches a job description.
+- Add cost monitoring and usage controls before enabling Bedrock in production.
