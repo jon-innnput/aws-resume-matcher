@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: AWS Resume Matcher API deployed with AWS SAM.
+
+Parameters:
+  ResumeBucket:
+    Type: String
+    Description: S3 bucket containing the plain-text resume file.
+
+  ResumeKey:
+    Type: String
+    Description: S3 object key for the plain-text resume file.
+
+  ApiPath:
+    Type: String
+    Default: /match
+    Description: Existing API Gateway POST path to preserve during migration.
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Timeout: 10
+    MemorySize: 128
+    Architectures:
+      - x86_64
+
+Resources:
+  ResumeMatcherApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: $default
+
+  ResumeMatcherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambda/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          RESUME_BUCKET: !Ref ResumeBucket
+          RESUME_KEY: !Ref ResumeKey
+      Policies:
+        - Statement:
+            - Sid: ReadConfiguredResumeObject
+              Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub arn:${AWS::Partition}:s3:::${ResumeBucket}/${ResumeKey}
+      Events:
+        MatchApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ResumeMatcherApi
+            Path: !Ref ApiPath
+            Method: post
+
+Outputs:
+  ApiEndpoint:
+    Description: POST endpoint for resume matching.
+    Value: !Sub
+      - https://${ApiId}.execute-api.${AWS::Region}.${AWS::URLSuffix}${Path}
+      - ApiId: !Ref ResumeMatcherApi
+        Path: !Ref ApiPath
+
+  ResumeMatcherFunctionArn:
+    Description: Resume matcher Lambda function ARN.
+    Value: !GetAtt ResumeMatcherFunction.Arn
