@@ -14,7 +14,7 @@ Parameters:
   ApiPath:
     Type: String
     Default: /match
-    Description: Existing API Gateway POST path to preserve during migration.
+    Description: Existing API Gateway POST path. The HttpApi route is fixed at /match for SAM validation compatibility.
 
 Globals:
   Function:
@@ -51,7 +51,7 @@ Resources:
           Type: HttpApi
           Properties:
             ApiId: !Ref ResumeMatcherApi
-            Path: !Ref ApiPath
+            Path: /match
             Method: post
 
 Outputs:
@@ -60,7 +60,7 @@ Outputs:
     Value: !Sub
       - https://${ApiId}.execute-api.${AWS::Region}.${AWS::URLSuffix}${Path}
       - ApiId: !Ref ResumeMatcherApi
-        Path: !Ref ApiPath
+        Path: /match
 
   ResumeMatcherFunctionArn:
     Description: Resume matcher Lambda function ARN.
