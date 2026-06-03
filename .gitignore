@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+.aws/
+.DS_Store
+
+sample-data/
