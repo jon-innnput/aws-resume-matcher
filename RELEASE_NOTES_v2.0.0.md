@@ -2,7 +2,9 @@
 
 ## Summary
 
-v2.0.0 adds guarded semantic AI matching to AWS Resume Matcher while preserving the existing keyword-only behavior by default. The semantic path uses Amazon Bedrock Titan Text Embeddings V2, hybrid keyword + semantic scoring, and S3-cached resume embeddings to keep runtime costs low.
+v2.0.0 adds guarded semantic AI matching to AWS Resume Matcher while preserving the existing keyword-only behavior by default. The release moves the project from deterministic keyword overlap into a hybrid AI matching architecture using Amazon Bedrock Titan Text Embeddings V2, weighted keyword + semantic scoring, and S3-cached resume embeddings to reduce repeated embedding work.
+
+This release is complete, tagged, and runtime-validated. It is still intentionally conservative for production use: semantic matching must be explicitly enabled with AWS account, Bedrock model access, and embedding-cache configuration in place.
 
 ## Highlights
 
@@ -28,6 +30,24 @@ End-to-end runtime validation completed successfully:
 - IAM permissions verified, including scoped cache-prefix listing.
 - API Gateway to Lambda to Bedrock to Lambda flow verified.
 - Keyword-only behavior verified with semantic matching disabled.
+
+## API Behavior
+
+Default keyword-only behavior remains:
+
+- Request body: `{"job_description":"..."}`
+- Response fields: `score`, `matching_keywords`, `missing_keywords`
+- No semantic provider, model, or weight fields are returned while semantic mode is disabled.
+
+Semantic mode adds:
+
+- `keyword_score`
+- `semantic_score`
+- `semantic_model`
+- `semantic_provider`
+- `weights`
+
+The top-level `score` remains the primary client-facing score. In semantic mode, it is the weighted hybrid score.
 
 ## Configuration
 
@@ -79,6 +99,7 @@ When semantic matching is enabled, responses include hybrid scoring details:
 - Enabling semantic matching requires Bedrock model access in the deployment region.
 - The embedding cache bucket must exist before semantic matching is enabled.
 - For production isolation, a separate embedding cache bucket is recommended; using the resume bucket with the default `embeddings/resume` prefix remains acceptable for small portfolio deployments.
+- The SAM template includes semantic IAM and configuration, but the GitHub deployment workflow does not yet pass semantic parameter overrides.
 
 ## Deferred To v2.1.0
 

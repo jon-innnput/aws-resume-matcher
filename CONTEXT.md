@@ -2,13 +2,15 @@
 
 ## Project Purpose
 
-AWS Resume Matcher is a serverless portfolio project that scores how well a resume matches a job description. It demonstrates a practical AWS application lifecycle: a Python Lambda API, S3-backed data access, infrastructure as code with AWS SAM, and GitHub Actions CI/CD using OIDC authentication.
+AWS Resume Matcher is a serverless AI portfolio project that scores how well a resume matches a job description. It demonstrates a practical AWS application lifecycle: a Python Lambda API, S3-backed data access, infrastructure as code with AWS SAM, GitHub Actions CI/CD using OIDC authentication, automated testing, and guarded semantic matching with Amazon Bedrock.
 
 The codebase includes v2.0.0 guarded semantic matching. Semantic matching is guarded by `SEMANTIC_MATCHING_ENABLED=false` by default, so the deployed Lambda behavior remains keyword-based unless explicitly enabled with the required embedding provider configuration and AWS permissions.
 
+The public repository presentation should position the project for recruiters, hiring managers, AWS reviewers, and technical audiences. The README should lead with what the app does, why it exists, current v2.0.0 status, architecture, key features, project evolution, demo request/response examples, and then setup/deployment details.
+
 ## Business Problem Being Solved
 
-Hiring teams and job seekers often need a quick way to compare a resume against a job description. This project provides a simple MVP that highlights overlapping and missing keywords so a reviewer can see whether the resume covers the language used in a target role.
+Hiring teams and job seekers often need a quick way to compare a resume against a job description. This project provides a simple matching API that highlights overlapping and missing keywords, and now includes a guarded semantic AI path that can capture meaning beyond exact keyword overlap.
 
 This is not an applicant tracking system and does not make hiring decisions. It is a lightweight matching demonstration intended for technical evaluation and future extension.
 
@@ -19,7 +21,9 @@ flowchart TD
     Client["Client"] -->|"POST /match"| HttpApi["API Gateway HTTP API"]
     HttpApi --> Function["ResumeMatcherFunction"]
     Function -->|"Read configured object"| ResumeObject["S3 resume text object"]
-    Function --> MatchResult["Keyword overlap result"]
+    Function -->|"Semantic mode only"| Bedrock["Amazon Bedrock Titan Text Embeddings V2"]
+    Function -->|"Cache read/write"| Cache["S3 embedding cache"]
+    Function --> MatchResult["JSON match result"]
     MatchResult --> Client
 ```
 
@@ -73,7 +77,15 @@ The repository has used short-lived feature branches merged into `main`. Observe
 - `feature/github-actions-cicd`
 - `feature/github-oidc-deploy`
 
-The current `main` branch contains the completed SAM, CI, and deployment workflow phases. Tags currently present include `v1.0-serverless-api`, `v1.0.1`, and `v1.1.0`; the deploy workflow represents the v1.2.0 phase in the project history.
+The current `main` branch contains the completed SAM, CI/CD, automated testing, and v2.0.0 semantic matching phases. Tags currently present include `v1.0-serverless-api`, `v1.0.1`, `v1.1.0`, `v1.2.0`, `v1.3.0`, and `v2.0.0`.
+
+## Version History For Presentation
+
+- **v1.0 Keyword Matching**: Serverless resume matching API with deterministic keyword overlap scoring.
+- **v1.1 AWS SAM IaC**: Repeatable infrastructure definition for API Gateway, Lambda, IAM, and outputs.
+- **v1.2 CI/CD**: GitHub Actions validation/build and OIDC-based AWS deployment.
+- **v1.3 Automated Testing**: Pytest suite for request validation, scoring behavior, and Lambda responses.
+- **v2.0 Semantic AI Matching**: Guarded Bedrock semantic matching, hybrid scoring, S3 embedding cache, SAM configuration, and scoped IAM.
 
 ## CI/CD Workflow Explanation
 
@@ -165,6 +177,7 @@ Not managed by `template.yaml`:
 
 ## Recommended Next Enhancements
 
+- Add a screenshot, short GIF, or terminal capture of a successful `/match` call for the README or GitHub release.
 - Add API-level integration tests using SAM local or a deployed test stack.
 - Build a small frontend that posts job descriptions to the `/match` endpoint.
 - Add resume upload or multi-resume support with explicit privacy controls.
@@ -174,6 +187,12 @@ Not managed by `template.yaml`:
 - Add a dev/prod environment strategy with separate stacks and repository variables.
 - Add API authentication before public exposure.
 - Document the AWS IAM trust policy needed for GitHub OIDC.
+
+## GitHub Presentation Recommendations
+
+- **About text**: Serverless AWS resume matcher with Lambda, API Gateway, S3, SAM, GitHub Actions OIDC, and guarded Bedrock semantic AI scoring.
+- **Website URL**: Use the GitHub repository URL until a safe public demo or GitHub Pages frontend exists. Do not expose a live unauthenticated API endpoint as the website URL.
+- **Topics**: `aws`, `aws-lambda`, `api-gateway`, `amazon-s3`, `amazon-bedrock`, `serverless`, `aws-sam`, `github-actions`, `oidc`, `python`, `pytest`, `semantic-search`, `embeddings`, `portfolio-project`, `resume-matcher`.
 
 ## Guidance for Future AI Assistants
 

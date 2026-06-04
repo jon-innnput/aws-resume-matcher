@@ -1,10 +1,16 @@
 # AWS Resume Matcher
 
-AWS Resume Matcher is a small serverless API that compares a job description against a plain-text resume stored in Amazon S3. It returns a keyword-overlap score, the matching keywords, and the missing keywords.
+[![CI](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml)
+[![Deploy](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml)
+![Release](https://img.shields.io/badge/release-v2.0.0-blue)
+![Python](https://img.shields.io/badge/python-3.13-blue)
+![AWS SAM](https://img.shields.io/badge/IaC-AWS%20SAM-orange)
 
-The project also includes v2.0.0 guarded semantic matching. Semantic matching is disabled by default with `SEMANTIC_MATCHING_ENABLED=false`; the deployed API remains keyword-based unless semantic mode is explicitly enabled and the required Bedrock/S3 permissions are configured.
+AWS Resume Matcher is a serverless AI portfolio project that compares a plain-text resume stored in Amazon S3 against a job description submitted to an API. It returns a match score, matching keywords, missing keywords, and, when explicitly enabled, hybrid semantic matching details powered by Amazon Bedrock Titan Text Embeddings V2.
 
-The project is designed as a practical AWS portfolio application: simple enough to review quickly, but complete enough to demonstrate Lambda, API Gateway, S3 access, AWS SAM infrastructure as code, GitHub Actions CI, and GitHub OIDC-based deployment.
+The project exists to demonstrate a practical AWS application lifecycle: serverless API design, S3-backed data access, infrastructure as code, CI/CD, least-privilege AWS permissions, automated tests, and an incremental path from deterministic keyword matching to guarded semantic AI matching.
+
+**Current status:** v2.0.0 is complete and validated. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
 
 ## Architecture
 
@@ -13,7 +19,9 @@ flowchart LR
     User["Client or reviewer"] -->|"POST /match"| Api["Amazon API Gateway HTTP API"]
     Api --> Lambda["AWS Lambda<br/>Python 3.13"]
     Lambda -->|"s3:GetObject"| S3["Amazon S3<br/>plain-text resume"]
-    Lambda --> Response["JSON score and keyword lists"]
+    Lambda -->|"semantic mode only"| Bedrock["Amazon Bedrock<br/>Titan Text Embeddings V2"]
+    Lambda -->|"cache read/write"| Cache["Amazon S3<br/>embedding cache"]
+    Lambda --> Response["JSON match result"]
     Response --> User
 
     GitHub["GitHub Actions"] -->|"OIDC assume role"| IAM["AWS IAM deploy role"]
@@ -22,47 +30,88 @@ flowchart LR
     SAM --> Lambda
 ```
 
+## Key Features
+
+- Serverless `POST /match` API backed by API Gateway and AWS Lambda.
+- Resume text loaded from a configured private S3 object instead of source control.
+- Deterministic keyword extraction, stop-word filtering, overlap scoring, matching keywords, and missing keywords.
+- Guarded hybrid keyword + semantic scoring using Amazon Bedrock Titan Text Embeddings V2.
+- S3 embedding cache keyed by resume bucket, resume key, S3 ETag, embedding model, dimensions, normalization setting, and cache schema version.
+- AWS SAM infrastructure as code for API Gateway, Lambda, environment variables, IAM policies, and stack outputs.
+- GitHub Actions CI for tests, SAM validation, SAM build, and Python compilation.
+- GitHub Actions deployment through OIDC-based AWS role assumption, with no long-lived AWS keys in the repository.
+- Pytest coverage for keyword scoring, request validation, semantic helpers, Bedrock provider behavior, S3 cache behavior, and SAM semantic configuration.
+- Semantic matching disabled by default to preserve the original keyword-only response shape unless intentionally enabled.
+
 ## Technology Stack
 
 - Python 3.13
 - AWS Lambda
 - Amazon API Gateway HTTP API
 - Amazon S3
-- AWS SAM
+- Amazon Bedrock Titan Text Embeddings V2
+- AWS SAM / AWS CloudFormation
+- AWS IAM
 - GitHub Actions
-- GitHub OIDC for AWS authentication
-- Guarded semantic matching with Amazon Bedrock Titan Text Embeddings V2
+- GitHub OIDC
+- Pytest
 - Optional local semantic validation with `sentence-transformers/all-MiniLM-L6-v2`
 
-## AWS Services Used
+## Demo
 
-- **AWS Lambda** runs the resume matching handler in `lambda/app.py`.
-- **Amazon API Gateway HTTP API** exposes `POST /match`.
-- **Amazon S3** stores the configured plain-text resume object.
-- **Amazon Bedrock** is the production-focused embedding provider for guarded semantic matching.
-- **AWS IAM** grants the Lambda function read access to the configured resume object, scoped Bedrock model invocation for guarded semantic matching, S3 embedding-cache read/write access, and allows GitHub Actions to assume a deployment role.
-- **AWS CloudFormation** is used through AWS SAM to provision and update the stack.
+Sample request:
 
-## Current Features
+```bash
+curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
+  -H "Content-Type: application/json" \
+  -d '{"job_description":"Python developer with AWS Lambda, S3, API Gateway, CI/CD, and semantic search experience."}'
+```
 
-- Accepts a JSON request containing `job_description`.
-- Reads a configured plain-text resume from S3.
-- Extracts normalized keywords from the resume and job description.
-- Filters common stop words.
-- Returns:
-  - `score`
-  - `matching_keywords`
-  - `missing_keywords`
-- Rejects non-POST methods.
-- Validates empty or malformed request bodies.
-- Includes a pytest suite for keyword extraction, comparison scoring, request validation, error handling, and Lambda response structure.
-- Defines infrastructure with AWS SAM.
-- Runs automated tests, CI validation, and SAM build in GitHub Actions.
-- Deploys from GitHub Actions to AWS using OIDC and repository variables.
-- Includes guarded hybrid keyword + semantic scoring helpers using an embedding provider abstraction.
-- Includes an Amazon Bedrock embedding provider and S3-backed resume embedding cache. This path is configured in SAM but not enabled by default.
+Sample keyword-only response:
 
-## Local Development Setup
+```json
+{
+  "score": 75,
+  "matching_keywords": ["api", "aws", "gateway", "lambda", "python", "s3"],
+  "missing_keywords": ["semantic"]
+}
+```
+
+Sample semantic-mode response:
+
+```json
+{
+  "score": 89,
+  "keyword_score": 75,
+  "semantic_score": 100,
+  "matching_keywords": ["api", "aws", "gateway", "lambda", "python", "s3"],
+  "missing_keywords": ["terraform"],
+  "semantic_model": "amazon.titan-embed-text-v2:0",
+  "semantic_provider": "bedrock",
+  "weights": {
+    "keyword": 0.45,
+    "semantic": 0.55
+  }
+}
+```
+
+Score fields:
+
+- `score`: The final match score returned to the client. In keyword-only mode, this is the keyword score. In semantic mode, this is the weighted hybrid score.
+- `keyword_score`: The percentage of extracted job-description keywords found in the resume. Present when semantic mode is enabled.
+- `semantic_score`: The embedding-similarity score between the resume and job description. Present when semantic mode is enabled.
+
+Exact scores depend on the configured resume object and the submitted job description.
+
+## Project Evolution
+
+- **v1.0 Keyword Matching**: Introduced the serverless resume matching MVP with deterministic keyword overlap scoring.
+- **v1.1 AWS SAM IaC**: Migrated infrastructure into AWS SAM for repeatable API Gateway, Lambda, IAM, and output provisioning.
+- **v1.2 CI/CD**: Added GitHub Actions validation, SAM build checks, and OIDC-based deployment from `main`.
+- **v1.3 Automated Testing**: Added pytest coverage for matching behavior, request handling, and Lambda responses.
+- **v2.0 Semantic AI Matching**: Added guarded Amazon Bedrock semantic matching, hybrid scoring, S3 embedding caching, SAM configuration, and least-privilege IAM while keeping keyword-only mode as the default.
+
+## Local Development
 
 Install:
 
@@ -71,7 +120,7 @@ Install:
 - AWS SAM CLI
 - Git
 
-Clone the repository and confirm the SAM template is valid:
+Clone the repository and validate the project:
 
 ```bash
 git clone <repository-url>
@@ -97,69 +146,6 @@ sample-data/resume.txt
 ```
 
 The `sample-data/` directory is ignored by Git to reduce the risk of publishing personal information.
-
-### Guarded Semantic Matching
-
-Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED`, which defaults to `false`. When the flag is disabled, the API keeps the original keyword-only production response shape.
-
-The production-focused semantic provider is Amazon Bedrock Titan Text Embeddings V2:
-
-```text
-SEMANTIC_MATCHING_ENABLED=true
-SEMANTIC_EMBEDDING_PROVIDER=bedrock
-BEDROCK_EMBEDDING_MODEL_ID=amazon.titan-embed-text-v2:0
-BEDROCK_EMBEDDING_DIMENSIONS=512
-EMBEDDING_CACHE_BUCKET=<bucket for cached resume embeddings>
-EMBEDDING_CACHE_PREFIX=embeddings/resume
-```
-
-`SEMANTIC_EMBEDDING_PROVIDER` defaults to `bedrock` when semantic matching is enabled. `BEDROCK_EMBEDDING_MODEL_ID`, `BEDROCK_EMBEDDING_DIMENSIONS`, and `EMBEDDING_CACHE_PREFIX` also have code defaults. `EMBEDDING_CACHE_BUCKET` falls back to `RESUME_BUCKET` if it is not set.
-
-Resume embeddings are cached in S3 as JSON. The cache key accounts for the resume bucket, resume key, resume S3 ETag, embedding model ID, embedding dimensions, normalization setting, and cache schema version. This allows a changed resume or changed embedding configuration to produce a new cache object automatically.
-
-For production, a separate embedding cache bucket is recommended when you want clearer lifecycle, access, and cleanup boundaries. For this portfolio app, using the existing resume bucket with the default `embeddings/resume` prefix is acceptable and cost-efficient because it avoids another bucket and keeps the IAM scope prefix-limited.
-
-The local validation provider remains available for experiments:
-
-```text
-SEMANTIC_MATCHING_ENABLED=true
-SEMANTIC_EMBEDDING_PROVIDER=local
-SEMANTIC_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
-```
-
-This repository does not add `sentence-transformers` to the default CI dependency set, does not download model weights in CI, does not change SAM packaging, and does not use Lambda container images. To experiment locally with the local provider, install the optional dependency in your local environment:
-
-```bash
-python -m pip install sentence-transformers
-```
-
-When semantic mode is disabled, responses keep the original production shape:
-
-```json
-{
-  "score": 75,
-  "matching_keywords": ["aws", "python", "s3"],
-  "missing_keywords": ["docker"]
-}
-```
-
-When semantic mode is enabled in an environment with the required provider configuration and permissions, responses include hybrid scoring details:
-
-```json
-{
-  "score": 89,
-  "keyword_score": 75,
-  "semantic_score": 100,
-  "matching_keywords": ["lambda", "python", "s3"],
-  "missing_keywords": ["terraform"],
-  "semantic_model": "amazon.titan-embed-text-v2:0",
-  "semantic_provider": "bedrock",
-  "weights": {
-    "keyword": 0.45,
-    "semantic": 0.55
-  }
-}
-```
 
 ## Running Locally
 
@@ -200,17 +186,52 @@ Expected response shape:
 
 The exact values depend on the resume object and job description.
 
-## AWS SAM Deployment Process
+## Semantic Matching Configuration
+
+Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED`, which defaults to `false`. When the flag is disabled, the API keeps the original keyword-only production response shape.
+
+The production-focused semantic provider is Amazon Bedrock Titan Text Embeddings V2:
+
+```text
+SEMANTIC_MATCHING_ENABLED=true
+SEMANTIC_EMBEDDING_PROVIDER=bedrock
+BEDROCK_EMBEDDING_MODEL_ID=amazon.titan-embed-text-v2:0
+BEDROCK_EMBEDDING_DIMENSIONS=512
+EMBEDDING_CACHE_BUCKET=<bucket for cached resume embeddings>
+EMBEDDING_CACHE_PREFIX=embeddings/resume
+```
+
+`SEMANTIC_EMBEDDING_PROVIDER` defaults to `bedrock` when semantic matching is enabled. `BEDROCK_EMBEDDING_MODEL_ID`, `BEDROCK_EMBEDDING_DIMENSIONS`, and `EMBEDDING_CACHE_PREFIX` also have code defaults. `EMBEDDING_CACHE_BUCKET` falls back to `RESUME_BUCKET` if it is not set.
+
+Resume embeddings are cached in S3 as JSON. The cache key accounts for the resume bucket, resume key, resume S3 ETag, embedding model ID, embedding dimensions, normalization setting, and cache schema version. This allows a changed resume or changed embedding configuration to produce a new cache object automatically.
+
+For production, a separate embedding cache bucket is recommended when you want clearer lifecycle, access, and cleanup boundaries. For this portfolio app, using the existing resume bucket with the default `embeddings/resume` prefix is acceptable and cost-efficient because it avoids another bucket and keeps the IAM scope prefix-limited.
+
+The local validation provider remains available for experiments:
+
+```text
+SEMANTIC_MATCHING_ENABLED=true
+SEMANTIC_EMBEDDING_PROVIDER=local
+SEMANTIC_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
+```
+
+This repository does not add `sentence-transformers` to the default CI dependency set, does not download model weights in CI, does not change SAM packaging, and does not use Lambda container images. To experiment locally with the local provider, install the optional dependency in your local environment:
+
+```bash
+python -m pip install sentence-transformers
+```
+
+## AWS SAM Deployment
 
 Infrastructure is defined in `template.yaml`. The SAM stack provisions:
 
 - `ResumeMatcherApi`
 - `ResumeMatcherFunction`
 - Lambda environment variables for `RESUME_BUCKET` and `RESUME_KEY`
-- An IAM policy allowing the function to read only the configured S3 object
+- IAM policy allowing the function to read only the configured S3 object
 - Lambda environment variables for guarded Bedrock semantic matching, defaulted off
-- An IAM policy allowing scoped `bedrock:InvokeModel` access to the configured embedding model
-- An IAM policy allowing S3 list/read/write access to the configured embedding cache prefix
+- IAM policy allowing scoped `bedrock:InvokeModel` access to the configured embedding model
+- IAM policy allowing S3 list/read/write access to the configured embedding cache prefix
 - Stack outputs for the API endpoint and Lambda function ARN
 
 Manual deployment can be performed with SAM:
@@ -221,7 +242,7 @@ sam build --template-file template.yaml --cached --parallel
 sam deploy
 ```
 
-The repository includes `samconfig.toml` with default build and deploy settings. The deploy parameter values should be reviewed before using them in another AWS account. Semantic matching remains disabled by default in `samconfig.toml`.
+The repository includes `samconfig.toml` with default build and deploy settings. Review the deploy parameter values before using them in another AWS account. Semantic matching remains disabled by default in `samconfig.toml`.
 
 The SAM template exposes these semantic parameters:
 
@@ -234,7 +255,7 @@ The SAM template exposes these semantic parameters:
 
 The deployment workflow still uses the existing required repository variables. To enable semantic matching through GitHub Actions later, add repository variables or workflow parameter overrides for the semantic parameters and validate Bedrock model access in the target account and region.
 
-## GitHub Actions CI/CD Overview
+## CI/CD
 
 The repository has two workflows:
 
@@ -262,7 +283,7 @@ The deployment workflow uses these GitHub repository variables:
 
 Semantic parameters have defaults in `template.yaml` and `samconfig.toml`; no additional repository variables are required while semantic matching remains disabled.
 
-## GitHub OIDC Authentication Overview
+## GitHub OIDC Authentication
 
 The deploy workflow uses `aws-actions/configure-aws-credentials` with GitHub OIDC. Instead of storing long-lived AWS access keys in GitHub, GitHub requests a short-lived OIDC token during the workflow run. AWS IAM validates that token against the trust policy on the configured deployment role, then issues temporary credentials for the job.
 
@@ -288,12 +309,14 @@ No AWS secrets are stored in the repository.
 |   `-- app.py
 |-- tests/
 |   |-- conftest.py
-|   `-- test_app.py
+|   |-- test_app.py
+|   `-- test_template.py
 |-- sample-data/
 |   `-- resume.txt
 |-- .gitignore
 |-- CONTEXT.md
 |-- README.md
+|-- RELEASE_NOTES_v2.0.0.md
 |-- requirements-dev.txt
 |-- samconfig.toml
 `-- template.yaml
@@ -305,6 +328,15 @@ Notes:
 - `sample-data/` is ignored by Git and should not be used for public resume data.
 - `.aws-sam/`, caches, virtual environments, and Python bytecode are ignored.
 
+## Version History
+
+- **v1.0.0 / `v1.0-serverless-api`**: Introduced the serverless resume matching API and removed local resume data from tracked files.
+- **v1.0.1**: Improved deployment documentation for the initial Lambda-based MVP.
+- **v1.1.0**: Migrated infrastructure into AWS SAM with an HTTP API, Lambda function, IAM policy, and stack outputs.
+- **v1.2.0**: Added GitHub Actions CI/CD support, including SAM validation/build in CI and OIDC-based deployment from pushes to `main`.
+- **v1.3.0**: Added pytest-based automated testing and updated CI to run tests before SAM validation and build.
+- **v2.0.0**: Added guarded semantic matching with Amazon Bedrock Titan Text Embeddings V2, hybrid keyword + semantic scoring, S3 resume embedding caching and reuse, SAM configuration, and least-privilege IAM while preserving keyword-only behavior by default.
+
 ## Future Roadmap
 
 - Add a small frontend for reviewer-friendly API interaction.
@@ -315,12 +347,3 @@ Notes:
 - Add authentication or rate limiting before any public deployment.
 - Add structured logging, tracing, and operational metrics.
 - Add a separate deployment environment strategy, such as dev and prod stacks.
-
-## Version History Summary
-
-- **v1.0.0 / `v1.0-serverless-api`**: Introduced the serverless resume matching API and removed local resume data from tracked files.
-- **v1.0.1**: Improved deployment documentation for the initial Lambda-based MVP.
-- **v1.1.0**: Migrated infrastructure into AWS SAM with an HTTP API, Lambda function, IAM policy, and stack outputs.
-- **v1.2.0**: Added GitHub Actions CI/CD support, including SAM validation/build in CI and OIDC-based deployment from pushes to `main`.
-- **v1.3.0**: Added pytest-based automated testing and updated CI to run tests before SAM validation and build.
-- **v2.0.0**: Added guarded semantic matching with Amazon Bedrock Titan Text Embeddings V2, hybrid keyword + semantic scoring, S3 resume embedding caching and reuse, SAM configuration, and least-privilege IAM while preserving keyword-only behavior by default.
