@@ -40,7 +40,7 @@ flowchart LR
 - **Amazon API Gateway HTTP API** exposes `POST /match`.
 - **Amazon S3** stores the configured plain-text resume object.
 - **Amazon Bedrock** is the production-focused embedding provider for guarded semantic matching.
-- **AWS IAM** grants the Lambda function read access to the configured resume object and allows GitHub Actions to assume a deployment role.
+- **AWS IAM** grants the Lambda function read access to the configured resume object, scoped Bedrock model invocation for guarded semantic matching, S3 embedding-cache read/write access, and allows GitHub Actions to assume a deployment role.
 - **AWS CloudFormation** is used through AWS SAM to provision and update the stack.
 
 ## Current Features
@@ -60,7 +60,7 @@ flowchart LR
 - Runs automated tests, CI validation, and SAM build in GitHub Actions.
 - Deploys from GitHub Actions to AWS using OIDC and repository variables.
 - Includes guarded hybrid keyword + semantic scoring helpers using an embedding provider abstraction.
-- Includes an Amazon Bedrock embedding provider and S3-backed resume embedding cache. This path is not production-enabled by default.
+- Includes an Amazon Bedrock embedding provider and S3-backed resume embedding cache. This path is configured in SAM but not enabled by default.
 
 ## Local Development Setup
 
@@ -116,6 +116,8 @@ EMBEDDING_CACHE_PREFIX=embeddings/resume
 `SEMANTIC_EMBEDDING_PROVIDER` defaults to `bedrock` when semantic matching is enabled. `BEDROCK_EMBEDDING_MODEL_ID`, `BEDROCK_EMBEDDING_DIMENSIONS`, and `EMBEDDING_CACHE_PREFIX` also have code defaults. `EMBEDDING_CACHE_BUCKET` falls back to `RESUME_BUCKET` if it is not set.
 
 Resume embeddings are cached in S3 as JSON. The cache key accounts for the resume bucket, resume key, resume S3 ETag, embedding model ID, embedding dimensions, normalization setting, and cache schema version. This allows a changed resume or changed embedding configuration to produce a new cache object automatically.
+
+For production, a separate embedding cache bucket is recommended when you want clearer lifecycle, access, and cleanup boundaries. For this portfolio app, using the existing resume bucket with the default `embeddings/resume` prefix is acceptable and cost-efficient because it avoids another bucket and keeps the IAM scope prefix-limited.
 
 The local validation provider remains available for experiments:
 
@@ -206,6 +208,9 @@ Infrastructure is defined in `template.yaml`. The SAM stack provisions:
 - `ResumeMatcherFunction`
 - Lambda environment variables for `RESUME_BUCKET` and `RESUME_KEY`
 - An IAM policy allowing the function to read only the configured S3 object
+- Lambda environment variables for guarded Bedrock semantic matching, defaulted off
+- An IAM policy allowing scoped `bedrock:InvokeModel` access to the configured embedding model
+- An IAM policy allowing S3 read/write access to the configured embedding cache prefix
 - Stack outputs for the API endpoint and Lambda function ARN
 
 Manual deployment can be performed with SAM:
@@ -216,9 +221,18 @@ sam build --template-file template.yaml --cached --parallel
 sam deploy
 ```
 
-The repository includes `samconfig.toml` with default build and deploy settings. The deploy parameter values should be reviewed before using them in another AWS account.
+The repository includes `samconfig.toml` with default build and deploy settings. The deploy parameter values should be reviewed before using them in another AWS account. Semantic matching remains disabled by default in `samconfig.toml`.
 
-Semantic matching remains disabled in the SAM template. Before enabling the Bedrock provider in a deployed stack, the template will need environment variables for semantic configuration plus IAM permissions for `bedrock:InvokeModel` and S3 read/write access to the embedding cache prefix.
+The SAM template exposes these semantic parameters:
+
+- `SemanticMatchingEnabled`
+- `SemanticEmbeddingProvider`
+- `BedrockEmbeddingModelId`
+- `BedrockEmbeddingDimensions`
+- `EmbeddingCacheBucket`
+- `EmbeddingCachePrefix`
+
+The deployment workflow still uses the existing required repository variables. To enable semantic matching through GitHub Actions later, add repository variables or workflow parameter overrides for the semantic parameters and validate Bedrock model access in the target account and region.
 
 ## GitHub Actions CI/CD Overview
 
@@ -245,6 +259,8 @@ The deployment workflow uses these GitHub repository variables:
 - `SAM_STACK_NAME`
 - `RESUME_BUCKET`
 - `RESUME_KEY`
+
+Semantic parameters have defaults in `template.yaml` and `samconfig.toml`; no additional repository variables are required while semantic matching remains disabled.
 
 ## GitHub OIDC Authentication Overview
 
@@ -293,7 +309,7 @@ Notes:
 
 - Add a small frontend for reviewer-friendly API interaction.
 - Support PDF or DOCX resume ingestion.
-- Add SAM configuration and IAM permissions to enable guarded Bedrock semantic matching in a deployed environment.
+- Validate guarded Bedrock semantic matching in a deployed development environment.
 - Add weighted scoring for skills, certifications, seniority, and domain experience.
 - Support multiple resumes and candidate ranking.
 - Add authentication or rate limiting before any public deployment.

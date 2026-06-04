@@ -16,6 +16,48 @@ Parameters:
     Default: /match
     Description: Existing API Gateway POST path. The HttpApi route is fixed at /match for SAM validation compatibility.
 
+  SemanticMatchingEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "false"
+      - "true"
+    Description: Enables guarded semantic matching. Keep false until Bedrock access is validated.
+
+  SemanticEmbeddingProvider:
+    Type: String
+    Default: bedrock
+    AllowedValues:
+      - bedrock
+    Description: Embedding provider for deployed semantic matching.
+
+  BedrockEmbeddingModelId:
+    Type: String
+    Default: amazon.titan-embed-text-v2:0
+    Description: Amazon Bedrock embedding model ID for semantic matching.
+
+  BedrockEmbeddingDimensions:
+    Type: Number
+    Default: 512
+    AllowedValues:
+      - 256
+      - 512
+      - 1024
+    Description: Output dimensions for Titan Text Embeddings V2.
+
+  EmbeddingCacheBucket:
+    Type: String
+    Default: ""
+    Description: Optional S3 bucket for cached resume embeddings. Leave blank to use ResumeBucket.
+
+  EmbeddingCachePrefix:
+    Type: String
+    Default: embeddings/resume
+    Description: S3 prefix used for cached resume embeddings.
+
+Conditions:
+  UseResumeBucketForEmbeddingCache: !Equals [!Ref EmbeddingCacheBucket, ""]
+
 Globals:
   Function:
     Runtime: python3.13
@@ -39,6 +81,15 @@ Resources:
         Variables:
           RESUME_BUCKET: !Ref ResumeBucket
           RESUME_KEY: !Ref ResumeKey
+          SEMANTIC_MATCHING_ENABLED: !Ref SemanticMatchingEnabled
+          SEMANTIC_EMBEDDING_PROVIDER: !Ref SemanticEmbeddingProvider
+          BEDROCK_EMBEDDING_MODEL_ID: !Ref BedrockEmbeddingModelId
+          BEDROCK_EMBEDDING_DIMENSIONS: !Sub "${BedrockEmbeddingDimensions}"
+          EMBEDDING_CACHE_BUCKET: !If
+            - UseResumeBucketForEmbeddingCache
+            - !Ref ResumeBucket
+            - !Ref EmbeddingCacheBucket
+          EMBEDDING_CACHE_PREFIX: !Ref EmbeddingCachePrefix
       Policies:
         - Statement:
             - Sid: ReadConfiguredResumeObject
@@ -46,6 +97,22 @@ Resources:
               Action:
                 - s3:GetObject
               Resource: !Sub arn:${AWS::Partition}:s3:::${ResumeBucket}/${ResumeKey}
+            - Sid: InvokeConfiguredBedrockEmbeddingModel
+              Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockEmbeddingModelId}
+            - Sid: ReadWriteEmbeddingCache
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource: !Sub
+                - arn:${AWS::Partition}:s3:::${CacheBucket}/${EmbeddingCachePrefix}/*
+                - CacheBucket: !If
+                    - UseResumeBucketForEmbeddingCache
+                    - !Ref ResumeBucket
+                    - !Ref EmbeddingCacheBucket
       Events:
         MatchApi:
           Type: HttpApi

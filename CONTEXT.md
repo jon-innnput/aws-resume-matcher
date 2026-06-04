@@ -25,14 +25,14 @@ flowchart TD
 
 The API accepts a JSON body with a `job_description` string. Lambda reads the configured resume object from S3, extracts normalized keywords from both texts, filters stop words, calculates a percentage score, and returns matching and missing keywords.
 
-When semantic matching is explicitly enabled, the matcher can calculate semantic similarity through an embedding provider abstraction and return hybrid score details. The production-focused provider is Amazon Bedrock Titan Text Embeddings V2 with S3-cached resume embeddings. The local `sentence-transformers/all-MiniLM-L6-v2` provider remains available for validation, but neither semantic provider is enabled by the SAM template or deployment workflow yet.
+When semantic matching is explicitly enabled, the matcher can calculate semantic similarity through an embedding provider abstraction and return hybrid score details. The production-focused provider is Amazon Bedrock Titan Text Embeddings V2 with S3-cached resume embeddings. The local `sentence-transformers/all-MiniLM-L6-v2` provider remains available for validation. SAM now exposes semantic configuration and IAM, but semantic matching remains disabled by default.
 
 ## Key Files and Responsibilities
 
 - `lambda/app.py`: Lambda handler, request parsing, S3 resume retrieval with ETag metadata, keyword extraction, embedding provider abstraction, Bedrock embedding provider, S3 resume embedding cache, guarded semantic scoring helpers, scoring, and JSON response creation.
 - `tests/`: Pytest suite covering keyword extraction, comparison scoring, semantic scoring with mocked embeddings, Bedrock provider calls, S3 embedding cache behavior, request validation, error handling, and Lambda response structure with mocked AWS access.
 - `requirements-dev.txt`: Local and CI development test dependencies.
-- `template.yaml`: AWS SAM template for the HTTP API, Lambda function, Lambda environment variables, least-scoped S3 read policy, and stack outputs.
+- `template.yaml`: AWS SAM template for the HTTP API, Lambda function, Lambda environment variables, least-scoped S3 read policy, guarded Bedrock semantic configuration, embedding cache permissions, and stack outputs.
 - `samconfig.toml`: Default SAM build and deploy settings for local CLI usage.
 - `.github/workflows/ci.yml`: CI workflow for pull requests and pushes to `main`; validates and builds the SAM app and compiles Python sources.
 - `.github/workflows/deploy.yml`: Deployment workflow for pushes to `main`; assumes an AWS role through GitHub OIDC and deploys the SAM stack.
@@ -54,13 +54,16 @@ The SAM template manages:
   - `ResumeBucket`
   - `ResumeKey`
 - An inline IAM policy allowing `s3:GetObject` only for the configured resume object.
+- Semantic environment variables defaulted with `SemanticMatchingEnabled` set to `false`.
+- An inline IAM policy allowing `bedrock:InvokeModel` only for the configured embedding model.
+- An inline IAM policy allowing S3 read/write access only under the configured embedding cache prefix.
 - Outputs:
   - `ApiEndpoint`
   - `ResumeMatcherFunctionArn`
 
 The resume S3 bucket and object are expected to exist outside this template. SAM grants read access to the configured object but does not create the bucket or upload the resume.
 
-The SAM template does not yet enable semantic matching. To enable the Bedrock provider later, it needs semantic environment variables, `bedrock:InvokeModel` permission for `amazon.titan-embed-text-v2:0`, and S3 read/write permissions for the embedding cache prefix.
+The embedding cache bucket is also expected to exist outside this template. If `EmbeddingCacheBucket` is blank, the function uses the resume bucket for cache objects under `EmbeddingCachePrefix`. A separate cache bucket is cleaner for lifecycle and access management, while reusing the resume bucket is simpler and cost-efficient for this portfolio app.
 
 ## Git Branching Strategy Used So Far
 
@@ -114,6 +117,8 @@ Required GitHub repository variables:
 - `RESUME_BUCKET`
 - `RESUME_KEY`
 
+Semantic parameters currently use SAM defaults and are not passed by the deployment workflow. To enable semantic matching from GitHub Actions later, add repository variables or workflow parameter overrides for the semantic parameters.
+
 ## AWS Resources Managed by SAM
 
 Managed directly by `template.yaml`:
@@ -128,6 +133,7 @@ Not managed by `template.yaml`:
 
 - Resume S3 bucket
 - Resume object upload
+- Embedding cache bucket
 - GitHub OIDC IAM identity provider
 - GitHub deployment IAM role
 - GitHub repository variables
@@ -140,6 +146,7 @@ Not managed by `template.yaml`:
 - **Guarded semantic scoring**: Allows hybrid scoring without changing production Lambda packaging or CI/CD yet.
 - **Bedrock production path**: Uses Amazon Titan Text Embeddings V2 through `bedrock-runtime` so standard SAM ZIP packaging can be preserved.
 - **S3 resume embedding cache**: Avoids recomputing resume embeddings on every request by keying cached JSON embeddings on resume bucket, key, ETag, model ID, dimensions, normalization setting, and schema version.
+- **Semantic disabled by default**: SAM carries the required configuration and IAM, but `SemanticMatchingEnabled` defaults to `false`.
 - **AWS SAM over manual console setup**: Makes the deployable infrastructure explicit and repeatable.
 - **HTTP API over REST API**: Keeps the API Gateway configuration lightweight for a single POST route.
 - **OIDC over static AWS keys**: Avoids long-lived AWS credentials in GitHub and uses temporary role-based credentials for deployment.
@@ -148,7 +155,8 @@ Not managed by `template.yaml`:
 ## Known Limitations
 
 - Production matching is keyword overlap by default; semantic matching is present only as an explicitly enabled guarded path.
-- The repository has not yet added SAM environment variables or IAM permissions needed to enable Bedrock semantic matching in AWS.
+- The repository has not yet validated Bedrock semantic matching in a deployed AWS environment.
+- The deployment workflow does not yet pass semantic parameter overrides for enabling semantic matching.
 - The API supports one configured resume object at a time.
 - The project does not currently parse PDF, DOCX, or rich resume formats.
 - `frontend/index.html` is empty, so there is no usable frontend yet.
@@ -162,7 +170,7 @@ Not managed by `template.yaml`:
 - Build a small frontend that posts job descriptions to the `/match` endpoint.
 - Add resume upload or multi-resume support with explicit privacy controls.
 - Add PDF and DOCX parsing.
-- Add SAM configuration and IAM permissions to enable Bedrock semantic matching in a deployed environment.
+- Validate Bedrock semantic matching in a deployed development environment.
 - Add structured logging and CloudWatch alarms.
 - Add a dev/prod environment strategy with separate stacks and repository variables.
 - Add API authentication before public exposure.
@@ -179,5 +187,5 @@ Not managed by `template.yaml`:
 - If modifying deployment workflows, keep OIDC permissions scoped and avoid adding static AWS keys.
 - If adding semantic tests, mock embedding vectors/models, Bedrock responses, and S3 cache interactions so CI does not download model weights or call AWS.
 - If adding tests, prefer focused tests around parsing, keyword extraction, scoring, method validation, and S3 failure handling.
-- Do not enable semantic matching in AWS deployment docs or workflows until SAM environment variables, IAM permissions, and a deployed validation path are in place.
+- Do not enable semantic matching in deployment workflows until Bedrock model access, cache bucket behavior, costs, and rollback behavior are validated in a development stack.
 - If adding frontend behavior, note that `frontend/index.html` is currently empty and no frontend build toolchain exists.
