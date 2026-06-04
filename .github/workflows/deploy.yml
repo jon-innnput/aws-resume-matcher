@@ -1,0 +1,53 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy SAM application
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up AWS SAM CLI
+        uses: aws-actions/setup-sam@v3
+        with:
+          use-installer: true
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Validate SAM template
+        run: sam validate --template-file template.yaml
+
+      - name: Build SAM application
+        run: sam build --template-file template.yaml --cached --parallel
+
+      - name: Deploy SAM application
+        run: |
+          sam deploy \
+            --stack-name ${{ vars.SAM_STACK_NAME }} \
+            --region ${{ vars.AWS_REGION }} \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              ResumeBucket=${{ vars.RESUME_BUCKET }} \
+              ResumeKey=${{ vars.RESUME_KEY }}
