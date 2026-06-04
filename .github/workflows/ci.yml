@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+env:
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_REGION: us-east-1
+
 jobs:
   validate-build:
     name: Validate and build
