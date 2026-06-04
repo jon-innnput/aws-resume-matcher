@@ -36,6 +36,12 @@ def test_sam_template_scopes_bedrock_and_embedding_cache_permissions():
         "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/"
         "${BedrockEmbeddingModelId}"
     ) in template
+    assert "Sid: ListEmbeddingCachePrefix" in template
+    assert "s3:ListBucket" in template
+    assert "arn:${AWS::Partition}:s3:::${CacheBucket}" in template
+    assert "StringLike:" in template
+    assert "s3:prefix:" in template
+    assert "- !Sub ${EmbeddingCachePrefix}/*" in template
     assert "Sid: ReadWriteEmbeddingCache" in template
     assert "s3:GetObject" in template
     assert "s3:PutObject" in template

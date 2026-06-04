@@ -210,7 +210,7 @@ Infrastructure is defined in `template.yaml`. The SAM stack provisions:
 - An IAM policy allowing the function to read only the configured S3 object
 - Lambda environment variables for guarded Bedrock semantic matching, defaulted off
 - An IAM policy allowing scoped `bedrock:InvokeModel` access to the configured embedding model
-- An IAM policy allowing S3 read/write access to the configured embedding cache prefix
+- An IAM policy allowing S3 list/read/write access to the configured embedding cache prefix
 - Stack outputs for the API endpoint and Lambda function ARN
 
 Manual deployment can be performed with SAM:
