@@ -32,6 +32,12 @@ jobs:
         with:
           use-installer: true
 
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip -r requirements-dev.txt
+
+      - name: Run automated tests
+        run: python -m pytest
+
       - name: Validate SAM template
         run: sam validate --template-file template.yaml
 

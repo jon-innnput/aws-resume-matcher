@@ -26,6 +26,8 @@ The API accepts a JSON body with a `job_description` string. Lambda reads the co
 ## Key Files and Responsibilities
 
 - `lambda/app.py`: Lambda handler, request parsing, S3 resume retrieval, keyword extraction, scoring, and JSON response creation.
+- `tests/`: Pytest suite covering keyword extraction, comparison scoring, request validation, error handling, and Lambda response structure with mocked AWS access.
+- `requirements-dev.txt`: Local and CI development test dependencies.
 - `template.yaml`: AWS SAM template for the HTTP API, Lambda function, Lambda environment variables, least-scoped S3 read policy, and stack outputs.
 - `samconfig.toml`: Default SAM build and deploy settings for local CLI usage.
 - `.github/workflows/ci.yml`: CI workflow for pull requests and pushes to `main`; validates and builds the SAM app and compiles Python sources.
@@ -78,6 +80,8 @@ It performs:
 - Checkout
 - Python 3.13 setup
 - AWS SAM CLI setup
+- Test dependency installation from `requirements-dev.txt`
+- `python -m pytest`
 - `sam validate --template-file template.yaml`
 - `sam build --template-file template.yaml --cached --parallel`
 - `python -m compileall lambda`
@@ -137,7 +141,6 @@ Not managed by `template.yaml`:
 - The matching algorithm is simple keyword overlap, not semantic matching.
 - The API supports one configured resume object at a time.
 - The project does not currently parse PDF, DOCX, or rich resume formats.
-- There are no committed automated unit tests.
 - `frontend/index.html` is empty, so there is no usable frontend yet.
 - The SAM template does not create the resume S3 bucket or upload resume content.
 - The API has no authentication, authorization, throttling policy, or custom domain configured in the template.
@@ -145,7 +148,6 @@ Not managed by `template.yaml`:
 
 ## Recommended Next Enhancements
 
-- Add unit tests for `lambda/app.py`.
 - Add API-level integration tests using SAM local or a deployed test stack.
 - Build a small frontend that posts job descriptions to the `/match` endpoint.
 - Add resume upload or multi-resume support with explicit privacy controls.
