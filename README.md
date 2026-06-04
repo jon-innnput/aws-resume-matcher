@@ -2,7 +2,7 @@
 
 AWS Resume Matcher is a small serverless API that compares a job description against a plain-text resume stored in Amazon S3. It returns a keyword-overlap score, the matching keywords, and the missing keywords.
 
-The project also includes guarded semantic matching work toward v2.0.0. Semantic matching is disabled by default with `SEMANTIC_MATCHING_ENABLED=false`; the deployed API remains keyword-based unless semantic mode is explicitly enabled and the required Bedrock/S3 permissions are configured.
+The project also includes v2.0.0 guarded semantic matching. Semantic matching is disabled by default with `SEMANTIC_MATCHING_ENABLED=false`; the deployed API remains keyword-based unless semantic mode is explicitly enabled and the required Bedrock/S3 permissions are configured.
 
 The project is designed as a practical AWS portfolio application: simple enough to review quickly, but complete enough to demonstrate Lambda, API Gateway, S3 access, AWS SAM infrastructure as code, GitHub Actions CI, and GitHub OIDC-based deployment.
 
@@ -309,7 +309,7 @@ Notes:
 
 - Add a small frontend for reviewer-friendly API interaction.
 - Support PDF or DOCX resume ingestion.
-- Validate guarded Bedrock semantic matching in a deployed development environment.
+- Add richer semantic explanations, such as top matching resume/job text snippets.
 - Add weighted scoring for skills, certifications, seniority, and domain experience.
 - Support multiple resumes and candidate ranking.
 - Add authentication or rate limiting before any public deployment.
@@ -323,4 +323,4 @@ Notes:
 - **v1.1.0**: Migrated infrastructure into AWS SAM with an HTTP API, Lambda function, IAM policy, and stack outputs.
 - **v1.2.0**: Added GitHub Actions CI/CD support, including SAM validation/build in CI and OIDC-based deployment from pushes to `main`.
 - **v1.3.0**: Added pytest-based automated testing and updated CI to run tests before SAM validation and build.
-- **v2.0.0**: In progress. Adds guarded semantic matching with Amazon Bedrock embeddings and S3 resume embedding caching while preserving keyword-only behavior by default.
+- **v2.0.0**: Added guarded semantic matching with Amazon Bedrock Titan Text Embeddings V2, hybrid keyword + semantic scoring, S3 resume embedding caching and reuse, SAM configuration, and least-privilege IAM while preserving keyword-only behavior by default.

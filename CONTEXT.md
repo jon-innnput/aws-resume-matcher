@@ -4,7 +4,7 @@
 
 AWS Resume Matcher is a serverless portfolio project that scores how well a resume matches a job description. It demonstrates a practical AWS application lifecycle: a Python Lambda API, S3-backed data access, infrastructure as code with AWS SAM, and GitHub Actions CI/CD using OIDC authentication.
 
-The codebase includes guarded semantic matching work toward v2.0.0. Semantic matching is guarded by `SEMANTIC_MATCHING_ENABLED=false` by default, so the deployed Lambda behavior remains keyword-based unless explicitly enabled with the required embedding provider configuration and AWS permissions.
+The codebase includes v2.0.0 guarded semantic matching. Semantic matching is guarded by `SEMANTIC_MATCHING_ENABLED=false` by default, so the deployed Lambda behavior remains keyword-based unless explicitly enabled with the required embedding provider configuration and AWS permissions.
 
 ## Business Problem Being Solved
 
@@ -25,7 +25,7 @@ flowchart TD
 
 The API accepts a JSON body with a `job_description` string. Lambda reads the configured resume object from S3, extracts normalized keywords from both texts, filters stop words, calculates a percentage score, and returns matching and missing keywords.
 
-When semantic matching is explicitly enabled, the matcher can calculate semantic similarity through an embedding provider abstraction and return hybrid score details. The production-focused provider is Amazon Bedrock Titan Text Embeddings V2 with S3-cached resume embeddings. The local `sentence-transformers/all-MiniLM-L6-v2` provider remains available for validation. SAM now exposes semantic configuration and IAM, but semantic matching remains disabled by default.
+When semantic matching is explicitly enabled, the matcher calculates semantic similarity through an embedding provider abstraction and returns hybrid score details. The production-focused provider is Amazon Bedrock Titan Text Embeddings V2 with S3-cached resume embeddings. End-to-end runtime validation has confirmed Bedrock invocation, semantic scoring, S3 cache creation, S3 cache reuse, IAM permissions, and the API Gateway to Lambda to Bedrock flow. The local `sentence-transformers/all-MiniLM-L6-v2` provider remains available for validation. SAM exposes semantic configuration and IAM, but semantic matching remains disabled by default.
 
 ## Key Files and Responsibilities
 
@@ -155,7 +155,6 @@ Not managed by `template.yaml`:
 ## Known Limitations
 
 - Production matching is keyword overlap by default; semantic matching is present only as an explicitly enabled guarded path.
-- The repository has not yet validated Bedrock semantic matching in a deployed AWS environment.
 - The deployment workflow does not yet pass semantic parameter overrides for enabling semantic matching.
 - The API supports one configured resume object at a time.
 - The project does not currently parse PDF, DOCX, or rich resume formats.
@@ -170,7 +169,7 @@ Not managed by `template.yaml`:
 - Build a small frontend that posts job descriptions to the `/match` endpoint.
 - Add resume upload or multi-resume support with explicit privacy controls.
 - Add PDF and DOCX parsing.
-- Validate Bedrock semantic matching in a deployed development environment.
+- Add richer semantic explanations, such as top matching resume/job text snippets.
 - Add structured logging and CloudWatch alarms.
 - Add a dev/prod environment strategy with separate stacks and repository variables.
 - Add API authentication before public exposure.
@@ -187,5 +186,5 @@ Not managed by `template.yaml`:
 - If modifying deployment workflows, keep OIDC permissions scoped and avoid adding static AWS keys.
 - If adding semantic tests, mock embedding vectors/models, Bedrock responses, and S3 cache interactions so CI does not download model weights or call AWS.
 - If adding tests, prefer focused tests around parsing, keyword extraction, scoring, method validation, and S3 failure handling.
-- Do not enable semantic matching in deployment workflows until Bedrock model access, cache bucket behavior, costs, and rollback behavior are validated in a development stack.
+- Do not enable semantic matching in deployment workflows without explicit parameter overrides and a rollback plan.
 - If adding frontend behavior, note that `frontend/index.html` is currently empty and no frontend build toolchain exists.
