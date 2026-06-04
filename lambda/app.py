@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -15,13 +16,27 @@ s3_client = boto3.client("s3")
 RESUME_BUCKET_ENV = "RESUME_BUCKET"
 RESUME_KEY_ENV = "RESUME_KEY"
 SEMANTIC_MATCHING_ENABLED_ENV = "SEMANTIC_MATCHING_ENABLED"
+SEMANTIC_EMBEDDING_PROVIDER_ENV = "SEMANTIC_EMBEDDING_PROVIDER"
 SEMANTIC_MODEL_NAME_ENV = "SEMANTIC_MODEL_NAME"
+BEDROCK_EMBEDDING_MODEL_ID_ENV = "BEDROCK_EMBEDDING_MODEL_ID"
+BEDROCK_EMBEDDING_DIMENSIONS_ENV = "BEDROCK_EMBEDDING_DIMENSIONS"
+EMBEDDING_CACHE_BUCKET_ENV = "EMBEDDING_CACHE_BUCKET"
+EMBEDDING_CACHE_PREFIX_ENV = "EMBEDDING_CACHE_PREFIX"
 
 DEFAULT_SEMANTIC_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_SEMANTIC_EMBEDDING_PROVIDER = "bedrock"
+LOCAL_EMBEDDING_PROVIDER = "local"
+BEDROCK_EMBEDDING_PROVIDER = "bedrock"
+DEFAULT_BEDROCK_EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v2:0"
+DEFAULT_BEDROCK_EMBEDDING_DIMENSIONS = 512
+DEFAULT_EMBEDDING_CACHE_PREFIX = "embeddings/resume"
+EMBEDDING_CACHE_SCHEMA_VERSION = "1.0"
 DEFAULT_KEYWORD_SCORE_WEIGHT = 0.45
 DEFAULT_SEMANTIC_SCORE_WEIGHT = 0.55
 
-_embedding_model = None
+_embedding_provider = None
+_local_embedding_model = None
+bedrock_runtime_client = None
 
 STOP_WORDS = {
     "a",
@@ -166,18 +181,138 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         return _response(400, {"message": "job_description must be a non-empty string"})
 
     try:
-        resume_text = _read_resume_from_s3()
+        resume_object = _read_resume_object_from_s3()
     except ValueError as exc:
         return _response(500, {"message": str(exc)})
     except Exception:
         logger.exception("Failed to read resume from S3")
         return _response(502, {"message": "Unable to read resume from S3"})
 
-    result = compare_resume_to_job(resume_text, job_description)
+    result = compare_resume_to_job(
+        resume_object["text"],
+        job_description,
+        resume_source=resume_object["source"],
+    )
     return _response(200, result)
 
 
-def compare_resume_to_job(resume_text: str, job_description: str) -> dict[str, Any]:
+class EmbeddingProvider:
+    model_id: str
+    dimensions: int | None
+    normalize: bool
+
+    def encode(self, text: str) -> list[float]:
+        raise NotImplementedError
+
+
+class LocalSentenceTransformerEmbeddingProvider(EmbeddingProvider):
+    def __init__(self, model: Any, model_id: str):
+        self.model = model
+        self.model_id = model_id
+        self.dimensions = None
+        self.normalize = False
+
+    def encode(self, text: str) -> list[float]:
+        return list(self.model.encode(text))
+
+
+class BedrockEmbeddingProvider(EmbeddingProvider):
+    def __init__(
+        self,
+        client: Any,
+        model_id: str,
+        dimensions: int,
+        normalize: bool = True,
+    ):
+        self.client = client
+        self.model_id = model_id
+        self.dimensions = dimensions
+        self.normalize = normalize
+
+    def encode(self, text: str) -> list[float]:
+        response = self.client.invoke_model(
+            modelId=self.model_id,
+            body=json.dumps(
+                {
+                    "inputText": text,
+                    "dimensions": self.dimensions,
+                    "normalize": self.normalize,
+                }
+            ),
+            accept="application/json",
+            contentType="application/json",
+        )
+        payload = json.loads(response["body"].read().decode("utf-8"))
+        return payload["embedding"]
+
+
+class S3EmbeddingCache:
+    def __init__(self, client: Any, bucket: str, prefix: str):
+        self.client = client
+        self.bucket = bucket
+        self.prefix = prefix.strip("/")
+
+    def cache_key(
+        self,
+        resume_source: dict[str, str],
+        provider: EmbeddingProvider,
+    ) -> str:
+        cache_identity = {
+            "schema_version": EMBEDDING_CACHE_SCHEMA_VERSION,
+            "resume_bucket": resume_source["bucket"],
+            "resume_key": resume_source["key"],
+            "resume_etag": resume_source["etag"],
+            "model_id": provider.model_id,
+            "dimensions": provider.dimensions,
+            "normalize": provider.normalize,
+        }
+        digest = hashlib.sha256(
+            json.dumps(cache_identity, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        return f"{self.prefix}/{digest}.json"
+
+    def get(self, key: str) -> list[float] | None:
+        try:
+            s3_object = self.client.get_object(Bucket=self.bucket, Key=key)
+        except Exception as exc:
+            if _is_s3_cache_miss(exc):
+                return None
+            raise
+
+        payload = json.loads(s3_object["Body"].read().decode("utf-8"))
+        return payload["embedding"]["vector"]
+
+    def put(
+        self,
+        key: str,
+        resume_source: dict[str, str],
+        provider: EmbeddingProvider,
+        embedding: Sequence[float],
+    ) -> None:
+        payload = {
+            "schema_version": EMBEDDING_CACHE_SCHEMA_VERSION,
+            "source": resume_source,
+            "embedding": {
+                "provider": _semantic_embedding_provider_name(),
+                "model_id": provider.model_id,
+                "dimensions": provider.dimensions,
+                "normalize": provider.normalize,
+                "vector": list(embedding),
+            },
+        }
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=key,
+            Body=json.dumps(payload).encode("utf-8"),
+            ContentType="application/json",
+        )
+
+
+def compare_resume_to_job(
+    resume_text: str,
+    job_description: str,
+    resume_source: dict[str, str] | None = None,
+) -> dict[str, Any]:
     resume_keywords = _extract_keywords(resume_text)
     job_keywords = _extract_keywords(job_description)
 
@@ -195,7 +330,15 @@ def compare_resume_to_job(resume_text: str, job_description: str) -> dict[str, A
             "missing_keywords": missing_keywords,
         }
 
-    semantic_score = calculate_semantic_score(resume_text, job_description)
+    embedding_provider = _load_embedding_provider()
+    embedding_cache = _load_embedding_cache() if resume_source else None
+    semantic_score = calculate_semantic_score(
+        resume_text,
+        job_description,
+        embedding_model=embedding_provider,
+        resume_source=resume_source,
+        embedding_cache=embedding_cache,
+    )
     score = combine_scores(keyword_score, semantic_score)
 
     return {
@@ -204,7 +347,8 @@ def compare_resume_to_job(resume_text: str, job_description: str) -> dict[str, A
         "semantic_score": semantic_score,
         "matching_keywords": matching_keywords,
         "missing_keywords": missing_keywords,
-        "semantic_model": _semantic_model_name(),
+        "semantic_model": embedding_provider.model_id,
+        "semantic_provider": _semantic_embedding_provider_name(),
         "weights": {
             "keyword": DEFAULT_KEYWORD_SCORE_WEIGHT,
             "semantic": DEFAULT_SEMANTIC_SCORE_WEIGHT,
@@ -224,12 +368,38 @@ def calculate_semantic_score(
     resume_text: str,
     job_description: str,
     embedding_model: Any | None = None,
+    resume_source: dict[str, str] | None = None,
+    embedding_cache: S3EmbeddingCache | None = None,
 ) -> int:
-    model = embedding_model or _load_embedding_model()
-    resume_embedding = model.encode(resume_text)
+    model = embedding_model or _load_embedding_provider()
+    resume_embedding = _get_resume_embedding(
+        resume_text,
+        resume_source,
+        model,
+        embedding_cache,
+    )
     job_embedding = model.encode(job_description)
     similarity = max(0.0, cosine_similarity(resume_embedding, job_embedding))
     return round(similarity * 100)
+
+
+def _get_resume_embedding(
+    resume_text: str,
+    resume_source: dict[str, str] | None,
+    provider: EmbeddingProvider,
+    embedding_cache: S3EmbeddingCache | None,
+) -> list[float]:
+    if resume_source is None or embedding_cache is None:
+        return provider.encode(resume_text)
+
+    cache_key = embedding_cache.cache_key(resume_source, provider)
+    cached_embedding = embedding_cache.get(cache_key)
+    if cached_embedding is not None:
+        return cached_embedding
+
+    resume_embedding = provider.encode(resume_text)
+    embedding_cache.put(cache_key, resume_source, provider, resume_embedding)
+    return resume_embedding
 
 
 def combine_scores(
@@ -296,6 +466,10 @@ def _request_method(event: dict[str, Any]) -> str | None:
 
 
 def _read_resume_from_s3() -> str:
+    return _read_resume_object_from_s3()["text"]
+
+
+def _read_resume_object_from_s3() -> dict[str, Any]:
     bucket = os.environ.get(RESUME_BUCKET_ENV)
     key = os.environ.get(RESUME_KEY_ENV)
 
@@ -303,7 +477,15 @@ def _read_resume_from_s3() -> str:
         raise ValueError(f"{RESUME_BUCKET_ENV} and {RESUME_KEY_ENV} must be configured")
 
     s3_object = s3_client.get_object(Bucket=bucket, Key=key)
-    return s3_object["Body"].read().decode("utf-8")
+    etag = s3_object.get("ETag", "").strip('"') or "unknown"
+    return {
+        "text": s3_object["Body"].read().decode("utf-8"),
+        "source": {
+            "bucket": bucket,
+            "key": key,
+            "etag": etag,
+        },
+    }
 
 
 def _semantic_matching_enabled() -> bool:
@@ -319,10 +501,115 @@ def _semantic_model_name() -> str:
     return os.environ.get(SEMANTIC_MODEL_NAME_ENV, DEFAULT_SEMANTIC_MODEL_NAME)
 
 
-def _load_embedding_model() -> Any:
-    global _embedding_model
+def _semantic_embedding_provider_name() -> str:
+    return os.environ.get(
+        SEMANTIC_EMBEDDING_PROVIDER_ENV,
+        DEFAULT_SEMANTIC_EMBEDDING_PROVIDER,
+    ).casefold()
 
-    if _embedding_model is None:
+
+def _bedrock_embedding_model_id() -> str:
+    return os.environ.get(
+        BEDROCK_EMBEDDING_MODEL_ID_ENV,
+        DEFAULT_BEDROCK_EMBEDDING_MODEL_ID,
+    )
+
+
+def _bedrock_embedding_dimensions() -> int:
+    value = os.environ.get(
+        BEDROCK_EMBEDDING_DIMENSIONS_ENV,
+        str(DEFAULT_BEDROCK_EMBEDDING_DIMENSIONS),
+    )
+    try:
+        dimensions = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{BEDROCK_EMBEDDING_DIMENSIONS_ENV} must be an integer") from exc
+
+    if dimensions <= 0:
+        raise ValueError(f"{BEDROCK_EMBEDDING_DIMENSIONS_ENV} must be positive")
+
+    return dimensions
+
+
+def _embedding_cache_bucket() -> str | None:
+    return os.environ.get(EMBEDDING_CACHE_BUCKET_ENV) or os.environ.get(
+        RESUME_BUCKET_ENV
+    )
+
+
+def _embedding_cache_prefix() -> str:
+    return os.environ.get(EMBEDDING_CACHE_PREFIX_ENV, DEFAULT_EMBEDDING_CACHE_PREFIX)
+
+
+def _load_embedding_provider() -> EmbeddingProvider:
+    global _embedding_provider
+
+    if _embedding_provider is None:
+        provider_name = _semantic_embedding_provider_name()
+        if provider_name == BEDROCK_EMBEDDING_PROVIDER:
+            _embedding_provider = BedrockEmbeddingProvider(
+                _bedrock_runtime_client(),
+                _bedrock_embedding_model_id(),
+                _bedrock_embedding_dimensions(),
+            )
+        elif provider_name == LOCAL_EMBEDDING_PROVIDER:
+            _embedding_provider = _load_local_embedding_provider()
+        else:
+            raise ValueError(
+                f"{SEMANTIC_EMBEDDING_PROVIDER_ENV} must be "
+                f"{BEDROCK_EMBEDDING_PROVIDER!r} or {LOCAL_EMBEDDING_PROVIDER!r}"
+            )
+
+    return _embedding_provider
+
+
+def _load_local_embedding_provider() -> LocalSentenceTransformerEmbeddingProvider:
+    model_id = _semantic_model_name()
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:
+        raise RuntimeError(
+            "Local semantic matching requires the optional sentence-transformers "
+            "package for validation."
+        ) from exc
+
+    return LocalSentenceTransformerEmbeddingProvider(SentenceTransformer(model_id), model_id)
+
+
+def _bedrock_runtime_client() -> Any:
+    global bedrock_runtime_client
+
+    if bedrock_runtime_client is None:
+        bedrock_runtime_client = boto3.client("bedrock-runtime")
+
+    return bedrock_runtime_client
+
+
+def _load_embedding_cache() -> S3EmbeddingCache:
+    bucket = _embedding_cache_bucket()
+    if not bucket:
+        raise ValueError(
+            f"{EMBEDDING_CACHE_BUCKET_ENV} or {RESUME_BUCKET_ENV} must be configured"
+        )
+
+    return S3EmbeddingCache(s3_client, bucket, _embedding_cache_prefix())
+
+
+def _is_s3_cache_miss(exc: Exception) -> bool:
+    error_code = (
+        getattr(exc, "response", {})
+        .get("Error", {})
+        .get("Code")
+    )
+    return error_code in {"NoSuchKey", "NotFound", "404"} or isinstance(
+        exc, FileNotFoundError
+    )
+
+
+def _load_embedding_model() -> Any:
+    global _local_embedding_model
+
+    if _local_embedding_model is None:
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:
@@ -331,9 +618,9 @@ def _load_embedding_model() -> Any:
                 "package for local validation."
             ) from exc
 
-        _embedding_model = SentenceTransformer(_semantic_model_name())
+        _local_embedding_model = SentenceTransformer(_semantic_model_name())
 
-    return _embedding_model
+    return _local_embedding_model
 
 
 def _extract_keywords(text: str) -> set[str]:

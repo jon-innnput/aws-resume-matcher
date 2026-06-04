@@ -6,26 +6,70 @@ import pytest
 
 
 class FakeS3Client:
-    def __init__(self, body_text="Python AWS Lambda S3 APIs", error=None):
+    def __init__(self, body_text="Python AWS Lambda S3 APIs", error=None, etag=None):
         self.body_text = body_text
         self.error = error
+        self.etag = etag
         self.calls = []
 
     def get_object(self, **kwargs):
         self.calls.append(kwargs)
         if self.error:
             raise self.error
-        return {"Body": BytesIO(self.body_text.encode("utf-8"))}
+        response = {"Body": BytesIO(self.body_text.encode("utf-8"))}
+        if self.etag:
+            response["ETag"] = self.etag
+        return response
 
 
 class FakeEmbeddingModel:
-    def __init__(self, embeddings):
+    def __init__(
+        self,
+        embeddings,
+        model_id="fake-model",
+        dimensions=2,
+        normalize=True,
+    ):
         self.embeddings = embeddings
+        self.model_id = model_id
+        self.dimensions = dimensions
+        self.normalize = normalize
         self.calls = []
 
     def encode(self, text):
         self.calls.append(text)
         return self.embeddings[text]
+
+
+class FakeBedrockClient:
+    def __init__(self, embedding):
+        self.embedding = embedding
+        self.calls = []
+
+    def invoke_model(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"body": BytesIO(json.dumps({"embedding": self.embedding}).encode())}
+
+
+class FakeCacheMiss(Exception):
+    response = {"Error": {"Code": "NoSuchKey"}}
+
+
+class FakeEmbeddingCacheS3Client:
+    def __init__(self, objects=None):
+        self.objects = objects or {}
+        self.get_calls = []
+        self.put_calls = []
+
+    def get_object(self, **kwargs):
+        self.get_calls.append(kwargs)
+        key = kwargs["Key"]
+        if key not in self.objects:
+            raise FakeCacheMiss()
+        return {"Body": BytesIO(json.dumps(self.objects[key]).encode("utf-8"))}
+
+    def put_object(self, **kwargs):
+        self.put_calls.append(kwargs)
 
 
 def response_body(response):
@@ -118,6 +162,141 @@ def test_calculate_semantic_score_clamps_negative_similarity(app_module):
     assert app_module.calculate_semantic_score("resume", "job", model) == 0
 
 
+def test_bedrock_embedding_provider_invokes_titan_v2_with_dimensions(app_module):
+    client = FakeBedrockClient([0.1, 0.2])
+    provider = app_module.BedrockEmbeddingProvider(
+        client,
+        "amazon.titan-embed-text-v2:0",
+        512,
+    )
+
+    embedding = provider.encode("serverless python")
+
+    assert embedding == [0.1, 0.2]
+    assert client.calls == [
+        {
+            "modelId": "amazon.titan-embed-text-v2:0",
+            "body": json.dumps(
+                {
+                    "inputText": "serverless python",
+                    "dimensions": 512,
+                    "normalize": True,
+                }
+            ),
+            "accept": "application/json",
+            "contentType": "application/json",
+        }
+    ]
+
+
+def test_s3_embedding_cache_key_includes_resume_and_model_identity(app_module):
+    cache = app_module.S3EmbeddingCache(
+        FakeEmbeddingCacheS3Client(),
+        "resume-bucket",
+        "cache-prefix",
+    )
+    provider = FakeEmbeddingModel({}, model_id="model-a", dimensions=512)
+    resume_source = {
+        "bucket": "resume-bucket",
+        "key": "resume.txt",
+        "etag": "etag-1",
+    }
+
+    key = cache.cache_key(resume_source, provider)
+    changed_etag_key = cache.cache_key(
+        {**resume_source, "etag": "etag-2"},
+        provider,
+    )
+    changed_model_key = cache.cache_key(
+        resume_source,
+        FakeEmbeddingModel({}, model_id="model-b", dimensions=512),
+    )
+    changed_dimensions_key = cache.cache_key(
+        resume_source,
+        FakeEmbeddingModel({}, model_id="model-a", dimensions=1024),
+    )
+
+    assert key.startswith("cache-prefix/")
+    assert key.endswith(".json")
+    assert key != changed_etag_key
+    assert key != changed_model_key
+    assert key != changed_dimensions_key
+
+
+def test_calculate_semantic_score_reuses_cached_resume_embedding(app_module):
+    provider = FakeEmbeddingModel(
+        {
+            "job": [1, 0],
+        },
+        model_id="model-a",
+        dimensions=2,
+    )
+    resume_source = {
+        "bucket": "resume-bucket",
+        "key": "resume.txt",
+        "etag": "etag-1",
+    }
+    cache_client = FakeEmbeddingCacheS3Client()
+    cache = app_module.S3EmbeddingCache(cache_client, "cache-bucket", "cache")
+    cache_key = cache.cache_key(resume_source, provider)
+    cache_client.objects[cache_key] = {
+        "embedding": {
+            "vector": [1, 0],
+        }
+    }
+
+    score = app_module.calculate_semantic_score(
+        "resume",
+        "job",
+        provider,
+        resume_source,
+        cache,
+    )
+
+    assert score == 100
+    assert provider.calls == ["job"]
+    assert cache_client.put_calls == []
+
+
+def test_calculate_semantic_score_writes_resume_embedding_on_cache_miss(app_module):
+    provider = FakeEmbeddingModel(
+        {
+            "resume": [1, 0],
+            "job": [1, 0],
+        },
+        model_id="model-a",
+        dimensions=2,
+    )
+    resume_source = {
+        "bucket": "resume-bucket",
+        "key": "resume.txt",
+        "etag": "etag-1",
+    }
+    cache_client = FakeEmbeddingCacheS3Client()
+    cache = app_module.S3EmbeddingCache(cache_client, "cache-bucket", "cache")
+
+    score = app_module.calculate_semantic_score(
+        "resume",
+        "job",
+        provider,
+        resume_source,
+        cache,
+    )
+
+    assert score == 100
+    assert provider.calls == ["resume", "job"]
+    assert len(cache_client.put_calls) == 1
+    put_call = cache_client.put_calls[0]
+    assert put_call["Bucket"] == "cache-bucket"
+    assert put_call["Key"].startswith("cache/")
+    assert put_call["ContentType"] == "application/json"
+    payload = json.loads(put_call["Body"].decode("utf-8"))
+    assert payload["schema_version"] == "1.0"
+    assert payload["source"] == resume_source
+    assert payload["embedding"]["model_id"] == "model-a"
+    assert payload["embedding"]["vector"] == [1, 0]
+
+
 def test_combine_scores_uses_default_hybrid_weights(app_module):
     assert app_module.combine_scores(keyword_score=75, semantic_score=90) == 83
 
@@ -138,7 +317,7 @@ def test_compare_resume_to_job_adds_semantic_fields_when_enabled(
     monkeypatch.setenv(app_module.SEMANTIC_MATCHING_ENABLED_ENV, "true")
     monkeypatch.setattr(
         app_module,
-        "_embedding_model",
+        "_embedding_provider",
         FakeEmbeddingModel(
             {
                 "Python AWS Lambda S3 DynamoDB": [1, 0],
@@ -158,7 +337,8 @@ def test_compare_resume_to_job_adds_semantic_fields_when_enabled(
         "semantic_score": 100,
         "matching_keywords": ["lambda", "python", "s3"],
         "missing_keywords": ["terraform"],
-        "semantic_model": "sentence-transformers/all-MiniLM-L6-v2",
+        "semantic_model": "fake-model",
+        "semantic_provider": "bedrock",
         "weights": {
             "keyword": 0.45,
             "semantic": 0.55,
