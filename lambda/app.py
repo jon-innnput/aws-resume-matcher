@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+from collections.abc import Sequence
 from typing import Any
 
 import boto3
@@ -13,6 +14,14 @@ s3_client = boto3.client("s3")
 
 RESUME_BUCKET_ENV = "RESUME_BUCKET"
 RESUME_KEY_ENV = "RESUME_KEY"
+SEMANTIC_MATCHING_ENABLED_ENV = "SEMANTIC_MATCHING_ENABLED"
+SEMANTIC_MODEL_NAME_ENV = "SEMANTIC_MODEL_NAME"
+
+DEFAULT_SEMANTIC_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_KEYWORD_SCORE_WEIGHT = 0.45
+DEFAULT_SEMANTIC_SCORE_WEIGHT = 0.55
+
+_embedding_model = None
 
 STOP_WORDS = {
     "a",
@@ -177,13 +186,83 @@ def compare_resume_to_job(resume_text: str, job_description: str) -> dict[str, A
 
     matching_keywords = sorted(job_keywords & resume_keywords)
     missing_keywords = sorted(job_keywords - resume_keywords)
-    score = round((len(matching_keywords) / len(job_keywords)) * 100)
+    keyword_score = calculate_keyword_score(resume_keywords, job_keywords)
+
+    if not _semantic_matching_enabled():
+        return {
+            "score": keyword_score,
+            "matching_keywords": matching_keywords,
+            "missing_keywords": missing_keywords,
+        }
+
+    semantic_score = calculate_semantic_score(resume_text, job_description)
+    score = combine_scores(keyword_score, semantic_score)
 
     return {
         "score": score,
+        "keyword_score": keyword_score,
+        "semantic_score": semantic_score,
         "matching_keywords": matching_keywords,
         "missing_keywords": missing_keywords,
+        "semantic_model": _semantic_model_name(),
+        "weights": {
+            "keyword": DEFAULT_KEYWORD_SCORE_WEIGHT,
+            "semantic": DEFAULT_SEMANTIC_SCORE_WEIGHT,
+        },
     }
+
+
+def calculate_keyword_score(resume_keywords: set[str], job_keywords: set[str]) -> int:
+    if not job_keywords:
+        return 0
+
+    matching_keywords = job_keywords & resume_keywords
+    return round((len(matching_keywords) / len(job_keywords)) * 100)
+
+
+def calculate_semantic_score(
+    resume_text: str,
+    job_description: str,
+    embedding_model: Any | None = None,
+) -> int:
+    model = embedding_model or _load_embedding_model()
+    resume_embedding = model.encode(resume_text)
+    job_embedding = model.encode(job_description)
+    similarity = max(0.0, cosine_similarity(resume_embedding, job_embedding))
+    return round(similarity * 100)
+
+
+def combine_scores(
+    keyword_score: int | float,
+    semantic_score: int | float,
+    keyword_weight: float = DEFAULT_KEYWORD_SCORE_WEIGHT,
+    semantic_weight: float = DEFAULT_SEMANTIC_SCORE_WEIGHT,
+) -> int:
+    total_weight = keyword_weight + semantic_weight
+    if total_weight <= 0:
+        raise ValueError("score weights must sum to a positive value")
+
+    weighted_score = (
+        (keyword_score * keyword_weight) + (semantic_score * semantic_weight)
+    ) / total_weight
+    return round(weighted_score)
+
+
+def cosine_similarity(
+    left_embedding: Sequence[float],
+    right_embedding: Sequence[float],
+) -> float:
+    if len(left_embedding) != len(right_embedding):
+        raise ValueError("embeddings must have the same dimension")
+
+    dot_product = sum(left * right for left, right in zip(left_embedding, right_embedding))
+    left_magnitude = sum(value * value for value in left_embedding) ** 0.5
+    right_magnitude = sum(value * value for value in right_embedding) ** 0.5
+
+    if left_magnitude == 0 or right_magnitude == 0:
+        return 0.0
+
+    return dot_product / (left_magnitude * right_magnitude)
 
 
 def _parse_body(event: dict[str, Any]) -> dict[str, Any]:
@@ -225,6 +304,36 @@ def _read_resume_from_s3() -> str:
 
     s3_object = s3_client.get_object(Bucket=bucket, Key=key)
     return s3_object["Body"].read().decode("utf-8")
+
+
+def _semantic_matching_enabled() -> bool:
+    return os.environ.get(SEMANTIC_MATCHING_ENABLED_ENV, "false").casefold() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _semantic_model_name() -> str:
+    return os.environ.get(SEMANTIC_MODEL_NAME_ENV, DEFAULT_SEMANTIC_MODEL_NAME)
+
+
+def _load_embedding_model() -> Any:
+    global _embedding_model
+
+    if _embedding_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as exc:
+            raise RuntimeError(
+                "Semantic matching requires the optional sentence-transformers "
+                "package for local validation."
+            ) from exc
+
+        _embedding_model = SentenceTransformer(_semantic_model_name())
+
+    return _embedding_model
 
 
 def _extract_keywords(text: str) -> set[str]:

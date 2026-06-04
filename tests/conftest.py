@@ -13,6 +13,8 @@ class StubS3Client:
 
 @pytest.fixture
 def app_module(monkeypatch):
+    monkeypatch.delenv("SEMANTIC_MATCHING_ENABLED", raising=False)
+    monkeypatch.delenv("SEMANTIC_MODEL_NAME", raising=False)
     boto3_stub = types.SimpleNamespace(client=lambda service_name: StubS3Client())
     monkeypatch.setitem(sys.modules, "boto3", boto3_stub)
 

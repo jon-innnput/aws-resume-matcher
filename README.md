@@ -2,6 +2,8 @@
 
 AWS Resume Matcher is a small serverless API that compares a job description against a plain-text resume stored in Amazon S3. It returns a keyword-overlap score, the matching keywords, and the missing keywords.
 
+The project also includes an experimental Phase 1 semantic matching path for local validation. Semantic matching is guarded by `SEMANTIC_MATCHING_ENABLED=false` by default, so the production Lambda deployment remains keyword-based unless the feature is explicitly enabled in an environment where optional ML dependencies are available.
+
 The project is designed as a practical AWS portfolio application: simple enough to review quickly, but complete enough to demonstrate Lambda, API Gateway, S3 access, AWS SAM infrastructure as code, GitHub Actions CI, and GitHub OIDC-based deployment.
 
 ## Architecture
@@ -29,6 +31,7 @@ flowchart LR
 - AWS SAM
 - GitHub Actions
 - GitHub OIDC for AWS authentication
+- Experimental local semantic matching with `sentence-transformers/all-MiniLM-L6-v2`
 
 ## AWS Services Used
 
@@ -54,6 +57,7 @@ flowchart LR
 - Defines infrastructure with AWS SAM.
 - Runs automated tests, CI validation, and SAM build in GitHub Actions.
 - Deploys from GitHub Actions to AWS using OIDC and repository variables.
+- Includes guarded hybrid keyword + semantic scoring helpers for local validation. This path is not production-enabled by default.
 
 ## Local Development Setup
 
@@ -90,6 +94,50 @@ sample-data/resume.txt
 ```
 
 The `sample-data/` directory is ignored by Git to reduce the risk of publishing personal information.
+
+### Experimental Semantic Matching
+
+Phase 1 semantic matching is available for local validation only. It uses `sentence-transformers/all-MiniLM-L6-v2` when `SEMANTIC_MATCHING_ENABLED` is set to a truthy value such as `true`, `1`, `yes`, or `on`.
+
+This repository does not add `sentence-transformers` to the default CI dependency set, does not download model weights in CI, and does not change SAM packaging. To experiment locally, install the optional dependency in your local environment:
+
+```bash
+python -m pip install sentence-transformers
+```
+
+Then enable semantic mode for a local run:
+
+```text
+SEMANTIC_MATCHING_ENABLED=true
+SEMANTIC_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
+```
+
+When semantic mode is disabled, responses keep the original production shape:
+
+```json
+{
+  "score": 75,
+  "matching_keywords": ["aws", "python", "s3"],
+  "missing_keywords": ["docker"]
+}
+```
+
+When semantic mode is enabled in a local environment with the optional dependency installed, responses include hybrid scoring details:
+
+```json
+{
+  "score": 89,
+  "keyword_score": 75,
+  "semantic_score": 100,
+  "matching_keywords": ["lambda", "python", "s3"],
+  "missing_keywords": ["terraform"],
+  "semantic_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "weights": {
+    "keyword": 0.45,
+    "semantic": 0.55
+  }
+}
+```
 
 ## Running Locally
 
@@ -223,7 +271,7 @@ Notes:
 
 - Add a small frontend for reviewer-friendly API interaction.
 - Support PDF or DOCX resume ingestion.
-- Replace keyword overlap with semantic similarity using embeddings.
+- Evaluate production deployment options for guarded semantic matching, including Lambda container images, Amazon Bedrock embeddings, precomputed resume embeddings, and local-only semantic mode.
 - Add weighted scoring for skills, certifications, seniority, and domain experience.
 - Support multiple resumes and candidate ranking.
 - Add authentication or rate limiting before any public deployment.
@@ -237,3 +285,4 @@ Notes:
 - **v1.1.0**: Migrated infrastructure into AWS SAM with an HTTP API, Lambda function, IAM policy, and stack outputs.
 - **v1.2.0**: Added GitHub Actions CI/CD support, including SAM validation/build in CI and OIDC-based deployment from pushes to `main`.
 - **v1.3.0**: Added pytest-based automated testing and updated CI to run tests before SAM validation and build.
+- **v2.0.0-alpha.1**: Added guarded local semantic scoring helpers with mocked tests while preserving keyword-only production Lambda behavior by default.
