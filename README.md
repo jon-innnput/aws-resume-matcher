@@ -50,8 +50,9 @@ flowchart LR
   - `missing_keywords`
 - Rejects non-POST methods.
 - Validates empty or malformed request bodies.
+- Includes a pytest suite for keyword extraction, comparison scoring, request validation, error handling, and Lambda response structure.
 - Defines infrastructure with AWS SAM.
-- Runs CI validation and SAM build in GitHub Actions.
+- Runs automated tests, CI validation, and SAM build in GitHub Actions.
 - Deploys from GitHub Actions to AWS using OIDC and repository variables.
 
 ## Local Development Setup
@@ -68,8 +69,18 @@ Clone the repository and confirm the SAM template is valid:
 ```bash
 git clone <repository-url>
 cd aws-resume-matcher
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python -m pytest
 sam validate --template-file template.yaml
 sam build --template-file template.yaml --cached --parallel
+```
+
+On Windows PowerShell, activate the virtual environment with:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
 ```
 
 This repository intentionally excludes resume files. For local experiments, create a private plain-text resume file outside version control, for example:
@@ -146,6 +157,8 @@ The repository has two workflows:
 - `.github/workflows/ci.yml`
   - Runs on pull requests and pushes to `main`.
   - Installs Python 3.13 and AWS SAM CLI.
+  - Installs pytest test dependencies.
+  - Runs `python -m pytest`.
   - Runs `sam validate`.
   - Runs `sam build --cached --parallel`.
   - Compiles Python sources under `lambda/`.
@@ -187,11 +200,15 @@ No AWS secrets are stored in the repository.
 |   `-- index.html
 |-- lambda/
 |   `-- app.py
+|-- tests/
+|   |-- conftest.py
+|   `-- test_app.py
 |-- sample-data/
 |   `-- resume.txt
 |-- .gitignore
 |-- CONTEXT.md
 |-- README.md
+|-- requirements-dev.txt
 |-- samconfig.toml
 `-- template.yaml
 ```
@@ -204,7 +221,6 @@ Notes:
 
 ## Future Roadmap
 
-- Add automated unit tests for request parsing, keyword extraction, S3 error handling, and scoring behavior.
 - Add a small frontend for reviewer-friendly API interaction.
 - Support PDF or DOCX resume ingestion.
 - Replace keyword overlap with semantic similarity using embeddings.
@@ -220,3 +236,4 @@ Notes:
 - **v1.0.1**: Improved deployment documentation for the initial Lambda-based MVP.
 - **v1.1.0**: Migrated infrastructure into AWS SAM with an HTTP API, Lambda function, IAM policy, and stack outputs.
 - **v1.2.0**: Added GitHub Actions CI/CD support, including SAM validation/build in CI and OIDC-based deployment from pushes to `main`.
+- **v1.3.0**: Added pytest-based automated testing and updated CI to run tests before SAM validation and build.
