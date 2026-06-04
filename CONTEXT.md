@@ -56,7 +56,7 @@ The SAM template manages:
 - An inline IAM policy allowing `s3:GetObject` only for the configured resume object.
 - Semantic environment variables defaulted with `SemanticMatchingEnabled` set to `false`.
 - An inline IAM policy allowing `bedrock:InvokeModel` only for the configured embedding model.
-- An inline IAM policy allowing S3 read/write access only under the configured embedding cache prefix.
+- An inline IAM policy allowing S3 list/read/write access only for the configured embedding cache prefix.
 - Outputs:
   - `ApiEndpoint`
   - `ResumeMatcherFunctionArn`

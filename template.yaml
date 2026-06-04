@@ -102,6 +102,20 @@ Resources:
               Action:
                 - bedrock:InvokeModel
               Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockEmbeddingModelId}
+            - Sid: ListEmbeddingCachePrefix
+              Effect: Allow
+              Action:
+                - s3:ListBucket
+              Resource: !Sub
+                - arn:${AWS::Partition}:s3:::${CacheBucket}
+                - CacheBucket: !If
+                    - UseResumeBucketForEmbeddingCache
+                    - !Ref ResumeBucket
+                    - !Ref EmbeddingCacheBucket
+              Condition:
+                StringLike:
+                  s3:prefix:
+                    - !Sub ${EmbeddingCachePrefix}/*
             - Sid: ReadWriteEmbeddingCache
               Effect: Allow
               Action:
