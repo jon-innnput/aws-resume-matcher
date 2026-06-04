@@ -4,6 +4,8 @@
 
 AWS Resume Matcher is a serverless portfolio project that scores how well a resume matches a job description. It demonstrates a practical AWS application lifecycle: a Python Lambda API, S3-backed data access, infrastructure as code with AWS SAM, and GitHub Actions CI/CD using OIDC authentication.
 
+The codebase includes Phase 1 experimental semantic matching helpers for local validation. Semantic matching is guarded by `SEMANTIC_MATCHING_ENABLED=false` by default, so the deployed Lambda behavior remains keyword-based unless explicitly enabled in an environment with optional ML dependencies.
+
 ## Business Problem Being Solved
 
 Hiring teams and job seekers often need a quick way to compare a resume against a job description. This project provides a simple MVP that highlights overlapping and missing keywords so a reviewer can see whether the resume covers the language used in a target role.
@@ -23,10 +25,12 @@ flowchart TD
 
 The API accepts a JSON body with a `job_description` string. Lambda reads the configured resume object from S3, extracts normalized keywords from both texts, filters stop words, calculates a percentage score, and returns matching and missing keywords.
 
+When semantic matching is explicitly enabled for local validation, the matcher also calculates semantic similarity with `sentence-transformers/all-MiniLM-L6-v2` and returns hybrid score details. This semantic path is not enabled by the SAM template, deployment workflow, or default test dependency set.
+
 ## Key Files and Responsibilities
 
-- `lambda/app.py`: Lambda handler, request parsing, S3 resume retrieval, keyword extraction, scoring, and JSON response creation.
-- `tests/`: Pytest suite covering keyword extraction, comparison scoring, request validation, error handling, and Lambda response structure with mocked AWS access.
+- `lambda/app.py`: Lambda handler, request parsing, S3 resume retrieval, keyword extraction, guarded semantic scoring helpers, scoring, and JSON response creation.
+- `tests/`: Pytest suite covering keyword extraction, comparison scoring, semantic scoring with mocked embeddings, request validation, error handling, and Lambda response structure with mocked AWS access.
 - `requirements-dev.txt`: Local and CI development test dependencies.
 - `template.yaml`: AWS SAM template for the HTTP API, Lambda function, Lambda environment variables, least-scoped S3 read policy, and stack outputs.
 - `samconfig.toml`: Default SAM build and deploy settings for local CLI usage.
@@ -131,6 +135,7 @@ Not managed by `template.yaml`:
 - **Plain-text resume input**: Keeps the MVP small and avoids PDF/DOCX parsing complexity.
 - **S3-backed resume storage**: Keeps personal resume content out of source control and allows the Lambda to read a configured object at runtime.
 - **Keyword overlap scoring**: Provides deterministic, reviewable behavior without introducing ML dependencies.
+- **Guarded semantic scoring**: Allows local validation of `sentence-transformers/all-MiniLM-L6-v2` hybrid scoring without changing production Lambda packaging or CI/CD yet.
 - **AWS SAM over manual console setup**: Makes the deployable infrastructure explicit and repeatable.
 - **HTTP API over REST API**: Keeps the API Gateway configuration lightweight for a single POST route.
 - **OIDC over static AWS keys**: Avoids long-lived AWS credentials in GitHub and uses temporary role-based credentials for deployment.
@@ -138,7 +143,8 @@ Not managed by `template.yaml`:
 
 ## Known Limitations
 
-- The matching algorithm is simple keyword overlap, not semantic matching.
+- Production matching is keyword overlap by default; semantic matching is present only as an explicitly enabled local/experimental path.
+- The repository has not yet selected a production semantic deployment option such as Lambda container images, Amazon Bedrock embeddings, precomputed resume embeddings, or local-only semantic mode.
 - The API supports one configured resume object at a time.
 - The project does not currently parse PDF, DOCX, or rich resume formats.
 - `frontend/index.html` is empty, so there is no usable frontend yet.
@@ -152,7 +158,7 @@ Not managed by `template.yaml`:
 - Build a small frontend that posts job descriptions to the `/match` endpoint.
 - Add resume upload or multi-resume support with explicit privacy controls.
 - Add PDF and DOCX parsing.
-- Add semantic matching through embeddings.
+- Evaluate and implement a production deployment strategy for semantic matching.
 - Add structured logging and CloudWatch alarms.
 - Add a dev/prod environment strategy with separate stacks and repository variables.
 - Add API authentication before public exposure.
@@ -167,5 +173,7 @@ Not managed by `template.yaml`:
 - Preserve the existing SAM logical IDs unless a migration plan is explicitly requested.
 - Be careful with `samconfig.toml`; it contains environment-specific deployment defaults.
 - If modifying deployment workflows, keep OIDC permissions scoped and avoid adding static AWS keys.
+- If adding semantic tests, mock embedding vectors/models so CI does not download `sentence-transformers` model weights by default.
 - If adding tests, prefer focused tests around parsing, keyword extraction, scoring, method validation, and S3 failure handling.
+- Do not enable semantic matching in AWS deployment docs or workflows until Phase 2 chooses a production deployment approach.
 - If adding frontend behavior, note that `frontend/index.html` is currently empty and no frontend build toolchain exists.

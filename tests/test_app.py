@@ -2,6 +2,8 @@ import base64
 import json
 from io import BytesIO
 
+import pytest
+
 
 class FakeS3Client:
     def __init__(self, body_text="Python AWS Lambda S3 APIs", error=None):
@@ -14,6 +16,16 @@ class FakeS3Client:
         if self.error:
             raise self.error
         return {"Body": BytesIO(self.body_text.encode("utf-8"))}
+
+
+class FakeEmbeddingModel:
+    def __init__(self, embeddings):
+        self.embeddings = embeddings
+        self.calls = []
+
+    def encode(self, text):
+        self.calls.append(text)
+        return self.embeddings[text]
 
 
 def response_body(response):
@@ -55,6 +67,102 @@ def test_compare_resume_to_job_handles_empty_job_keywords(app_module):
         "score": 0,
         "matching_keywords": [],
         "missing_keywords": [],
+    }
+
+
+def test_calculate_keyword_score_uses_existing_overlap_formula(app_module):
+    score = app_module.calculate_keyword_score(
+        {"python", "aws", "lambda"},
+        {"python", "lambda", "terraform"},
+    )
+
+    assert score == 67
+
+
+def test_cosine_similarity_returns_expected_similarity(app_module):
+    assert app_module.cosine_similarity([1, 0], [0, 1]) == 0
+    assert app_module.cosine_similarity([1, 1], [1, 1]) == pytest.approx(1)
+
+
+def test_cosine_similarity_rejects_mismatched_dimensions(app_module):
+    try:
+        app_module.cosine_similarity([1, 0], [1])
+    except ValueError as exc:
+        assert str(exc) == "embeddings must have the same dimension"
+    else:
+        raise AssertionError("Expected mismatched embeddings to raise ValueError")
+
+
+def test_calculate_semantic_score_uses_mocked_embeddings(app_module):
+    model = FakeEmbeddingModel(
+        {
+            "resume": [1, 1],
+            "job": [1, 0],
+        }
+    )
+
+    score = app_module.calculate_semantic_score("resume", "job", model)
+
+    assert score == 71
+    assert model.calls == ["resume", "job"]
+
+
+def test_calculate_semantic_score_clamps_negative_similarity(app_module):
+    model = FakeEmbeddingModel(
+        {
+            "resume": [1, 0],
+            "job": [-1, 0],
+        }
+    )
+
+    assert app_module.calculate_semantic_score("resume", "job", model) == 0
+
+
+def test_combine_scores_uses_default_hybrid_weights(app_module):
+    assert app_module.combine_scores(keyword_score=75, semantic_score=90) == 83
+
+
+def test_compare_resume_to_job_keeps_keyword_only_shape_by_default(app_module):
+    result = app_module.compare_resume_to_job(
+        "Python AWS Lambda S3 DynamoDB",
+        "Python Lambda Terraform S3",
+    )
+
+    assert set(result) == {"score", "matching_keywords", "missing_keywords"}
+    assert result["score"] == 75
+
+
+def test_compare_resume_to_job_adds_semantic_fields_when_enabled(
+    app_module, monkeypatch
+):
+    monkeypatch.setenv(app_module.SEMANTIC_MATCHING_ENABLED_ENV, "true")
+    monkeypatch.setattr(
+        app_module,
+        "_embedding_model",
+        FakeEmbeddingModel(
+            {
+                "Python AWS Lambda S3 DynamoDB": [1, 0],
+                "Python Lambda Terraform S3": [1, 0],
+            }
+        ),
+    )
+
+    result = app_module.compare_resume_to_job(
+        "Python AWS Lambda S3 DynamoDB",
+        "Python Lambda Terraform S3",
+    )
+
+    assert result == {
+        "score": 89,
+        "keyword_score": 75,
+        "semantic_score": 100,
+        "matching_keywords": ["lambda", "python", "s3"],
+        "missing_keywords": ["terraform"],
+        "semantic_model": "sentence-transformers/all-MiniLM-L6-v2",
+        "weights": {
+            "keyword": 0.45,
+            "semantic": 0.55,
+        },
     }
 
 
