@@ -6,5 +6,5 @@ __pycache__/
 .aws/
 .aws-sam/
 .DS_Store
-
 sample-data/
+.pytest_cache/

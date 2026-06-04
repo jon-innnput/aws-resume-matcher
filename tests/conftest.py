@@ -14,7 +14,12 @@ class StubS3Client:
 @pytest.fixture
 def app_module(monkeypatch):
     monkeypatch.delenv("SEMANTIC_MATCHING_ENABLED", raising=False)
+    monkeypatch.delenv("SEMANTIC_EMBEDDING_PROVIDER", raising=False)
     monkeypatch.delenv("SEMANTIC_MODEL_NAME", raising=False)
+    monkeypatch.delenv("BEDROCK_EMBEDDING_MODEL_ID", raising=False)
+    monkeypatch.delenv("BEDROCK_EMBEDDING_DIMENSIONS", raising=False)
+    monkeypatch.delenv("EMBEDDING_CACHE_BUCKET", raising=False)
+    monkeypatch.delenv("EMBEDDING_CACHE_PREFIX", raising=False)
     boto3_stub = types.SimpleNamespace(client=lambda service_name: StubS3Client())
     monkeypatch.setitem(sys.modules, "boto3", boto3_stub)
 
