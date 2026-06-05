@@ -2,15 +2,15 @@
 
 [![CI](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml)
 [![Deploy](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml)
-![Release](https://img.shields.io/badge/release-v2.0.0-blue)
+![Release](https://img.shields.io/badge/release-v2.1.0-blue)
 ![Python](https://img.shields.io/badge/python-3.13-blue)
 ![AWS SAM](https://img.shields.io/badge/IaC-AWS%20SAM-orange)
 
-AWS Resume Matcher is a serverless AI portfolio project that compares a plain-text resume stored in Amazon S3 against a job description submitted to an API. It returns a match score, matching keywords, missing keywords, and, when explicitly enabled, hybrid semantic matching details powered by Amazon Bedrock Titan Text Embeddings V2.
+AWS Resume Matcher is a serverless AI portfolio project that compares a resume stored in Amazon S3 against a job description submitted to an API. It returns a match score, matching keywords, missing keywords, and, when explicitly enabled, hybrid semantic matching details powered by Amazon Bedrock Titan Text Embeddings V2.
 
 The project exists to demonstrate a practical AWS application lifecycle: serverless API design, S3-backed data access, infrastructure as code, CI/CD, least-privilege AWS permissions, automated tests, and an incremental path from deterministic keyword matching to guarded semantic AI matching.
 
-**Current status:** v2.0.0 is complete and validated. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
+**Current status:** v2.1.0 is complete and validated. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
 
 ## Architecture
 
@@ -18,7 +18,8 @@ The project exists to demonstrate a practical AWS application lifecycle: serverl
 flowchart LR
     User["Client or reviewer"] -->|"POST /match"| Api["Amazon API Gateway HTTP API"]
     Api --> Lambda["AWS Lambda<br/>Python 3.13"]
-    Lambda -->|"s3:GetObject"| S3["Amazon S3<br/>plain-text resume"]
+    Lambda -->|"s3:GetObject"| S3["Amazon S3<br/>resume .txt/.pdf/.docx"]
+    Lambda -->|"URL job descriptions only"| Url["HTTP/HTTPS<br/>job posting"]
     Lambda -->|"semantic mode only"| Bedrock["Amazon Bedrock<br/>Titan Text Embeddings V2"]
     Lambda -->|"cache read/write"| Cache["Amazon S3<br/>embedding cache"]
     Lambda --> Response["JSON match result"]
@@ -33,7 +34,8 @@ flowchart LR
 ## Key Features
 
 - Serverless `POST /match` API backed by API Gateway and AWS Lambda.
-- Resume text loaded from a configured private S3 object instead of source control.
+- Resume loaded from a configured private S3 object instead of source control, with `.txt`, `.pdf`, and `.docx` intake support.
+- Job description intake through direct JSON text, inline `.txt` or `.md` file content, or an HTTP/HTTPS URL.
 - Deterministic keyword extraction, stop-word filtering, overlap scoring, matching keywords, and missing keywords.
 - Guarded hybrid keyword + semantic scoring using Amazon Bedrock Titan Text Embeddings V2.
 - S3 embedding cache keyed by resume bucket, resume key, S3 ETag, embedding model, dimensions, normalization setting, and cache schema version.
@@ -42,6 +44,7 @@ flowchart LR
 - GitHub Actions deployment through OIDC-based AWS role assumption, with no long-lived AWS keys in the repository.
 - Pytest coverage for keyword scoring, request validation, semantic helpers, Bedrock provider behavior, S3 cache behavior, and SAM semantic configuration.
 - Semantic matching disabled by default to preserve the original keyword-only response shape unless intentionally enabled.
+- Lightweight document parsing with `pypdf` and `python-docx`; URL intake uses Python standard-library networking and HTML text extraction.
 
 ## Technology Stack
 
@@ -59,12 +62,28 @@ flowchart LR
 
 ## Demo
 
-Sample request:
+Sample direct-text request:
 
 ```bash
 curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
   -H "Content-Type: application/json" \
   -d '{"job_description":"Python developer with AWS Lambda, S3, API Gateway, CI/CD, and semantic search experience."}'
+```
+
+Sample inline file request:
+
+```bash
+curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
+  -H "Content-Type: application/json" \
+  -d '{"job_description_file":{"filename":"job.md","content":"# Role\nPython developer with AWS Lambda and S3 experience."}}'
+```
+
+Sample URL request:
+
+```bash
+curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
+  -H "Content-Type: application/json" \
+  -d '{"job_description_url":"https://example.com/jobs/serverless-python-developer"}'
 ```
 
 Sample keyword-only response:
@@ -110,6 +129,7 @@ Exact scores depend on the configured resume object and the submitted job descri
 - **v1.2 CI/CD**: Added GitHub Actions validation, SAM build checks, and OIDC-based deployment from `main`.
 - **v1.3 Automated Testing**: Added pytest coverage for matching behavior, request handling, and Lambda responses.
 - **v2.0 Semantic AI Matching**: Added guarded Amazon Bedrock semantic matching, hybrid scoring, S3 embedding caching, SAM configuration, and least-privilege IAM while keeping keyword-only mode as the default.
+- **v2.1 Intake Expansion**: Added resume intake for `.txt`, `.pdf`, and `.docx`, plus job-description intake from direct text, inline `.txt`/`.md` content, and URL text extraction.
 
 ## Local Development
 
@@ -139,21 +159,21 @@ On Windows PowerShell, activate the virtual environment with:
 .\.venv\Scripts\Activate.ps1
 ```
 
-This repository intentionally excludes resume files. For local experiments, create a private plain-text resume file outside version control, for example:
+This repository intentionally excludes resume files. For local experiments, create a private resume file outside version control, for example:
 
 ```text
 sample-data/resume.txt
 ```
 
-The `sample-data/` directory is ignored by Git to reduce the risk of publishing personal information.
+The `sample-data/` directory is ignored by Git to reduce the risk of publishing personal information. Resume intake supports `.txt`, `.pdf`, and `.docx` objects in S3. Text and Markdown job-description file inputs support `.txt` and `.md`.
 
 ## Running Locally
 
 The Lambda function expects two environment variables:
 
 ```text
-RESUME_BUCKET=<bucket containing the resume text file>
-RESUME_KEY=<path/to/resume.txt>
+RESUME_BUCKET=<bucket containing the resume file>
+RESUME_KEY=<path/to/resume.txt|resume.pdf|resume.docx>
 ```
 
 For a local API run with SAM, use the template parameters that populate those variables:
@@ -185,6 +205,22 @@ Expected response shape:
 ```
 
 The exact values depend on the resume object and job description.
+
+## Intake Formats
+
+Resume intake is still configured by `RESUME_BUCKET` and `RESUME_KEY`, but the object key may now point to:
+
+- `.txt`: decoded as UTF-8 text.
+- `.pdf`: extracted with `pypdf`.
+- `.docx`: extracted with `python-docx`, including paragraph and table cell text.
+
+Job descriptions can be submitted in exactly one of these fields:
+
+- `job_description`: Existing direct text input.
+- `job_description_file`: An object with `filename`, `content`, and optional `is_base64_encoded`; supported filenames end in `.txt` or `.md`.
+- `job_description_url`: An HTTP or HTTPS URL. The Lambda fetches up to 1 MB with a short timeout and extracts readable text from HTML responses with Python standard-library parsing.
+
+URL intake rejects localhost, literal private IP addresses, non-HTTP schemes, and embedded credentials. It does not add any persistent AWS resources, but each URL request performs outbound network I/O from Lambda, so direct text or inline file intake remains the lowest-latency and lowest-variability option.
 
 ## Semantic Matching Configuration
 
@@ -227,7 +263,7 @@ Infrastructure is defined in `template.yaml`. The SAM stack provisions:
 
 - `ResumeMatcherApi`
 - `ResumeMatcherFunction`
-- Lambda environment variables for `RESUME_BUCKET` and `RESUME_KEY`
+- Lambda environment variables for `RESUME_BUCKET` and `RESUME_KEY`, which may reference `.txt`, `.pdf`, or `.docx` resume objects
 - IAM policy allowing the function to read only the configured S3 object
 - Lambda environment variables for guarded Bedrock semantic matching, defaulted off
 - IAM policy allowing scoped `bedrock:InvokeModel` access to the configured embedding model
@@ -306,7 +342,8 @@ No AWS secrets are stored in the repository.
 |-- frontend/
 |   `-- index.html
 |-- lambda/
-|   `-- app.py
+|   |-- app.py
+|   `-- requirements.txt
 |-- tests/
 |   |-- conftest.py
 |   |-- test_app.py
@@ -317,6 +354,7 @@ No AWS secrets are stored in the repository.
 |-- CONTEXT.md
 |-- README.md
 |-- RELEASE_NOTES_v2.0.0.md
+|-- RELEASE_NOTES_v2.1.0.md
 |-- requirements-dev.txt
 |-- samconfig.toml
 `-- template.yaml
@@ -336,11 +374,11 @@ Notes:
 - **v1.2.0**: Added GitHub Actions CI/CD support, including SAM validation/build in CI and OIDC-based deployment from pushes to `main`.
 - **v1.3.0**: Added pytest-based automated testing and updated CI to run tests before SAM validation and build.
 - **v2.0.0**: Added guarded semantic matching with Amazon Bedrock Titan Text Embeddings V2, hybrid keyword + semantic scoring, S3 resume embedding caching and reuse, SAM configuration, and least-privilege IAM while preserving keyword-only behavior by default.
+- **v2.1.0**: Added resume and job-description intake expansion for `.txt`, `.pdf`, `.docx`, `.md`, and URL-based job descriptions while preserving the existing direct-text API behavior.
 
 ## Future Roadmap
 
 - Add a small frontend for reviewer-friendly API interaction.
-- Support PDF or DOCX resume ingestion.
 - Add richer semantic explanations, such as top matching resume/job text snippets.
 - Add weighted scoring for skills, certifications, seniority, and domain experience.
 - Support multiple resumes and candidate ranking.

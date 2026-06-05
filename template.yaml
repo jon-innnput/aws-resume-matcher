@@ -5,11 +5,11 @@ Description: AWS Resume Matcher API deployed with AWS SAM.
 Parameters:
   ResumeBucket:
     Type: String
-    Description: S3 bucket containing the plain-text resume file.
+    Description: S3 bucket containing the resume file.
 
   ResumeKey:
     Type: String
-    Description: S3 object key for the plain-text resume file.
+    Description: S3 object key for the .txt, .pdf, or .docx resume file.
 
   ApiPath:
     Type: String

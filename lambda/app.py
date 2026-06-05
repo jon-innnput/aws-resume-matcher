@@ -1,10 +1,16 @@
 import base64
 import hashlib
+import html.parser
+import ipaddress
 import json
 import logging
 import os
 import re
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections.abc import Sequence
+from io import BytesIO
 from typing import Any
 
 import boto3
@@ -33,6 +39,10 @@ DEFAULT_EMBEDDING_CACHE_PREFIX = "embeddings/resume"
 EMBEDDING_CACHE_SCHEMA_VERSION = "1.0"
 DEFAULT_KEYWORD_SCORE_WEIGHT = 0.45
 DEFAULT_SEMANTIC_SCORE_WEIGHT = 0.55
+MAX_JOB_DESCRIPTION_URL_BYTES = 1_000_000
+JOB_DESCRIPTION_URL_TIMEOUT_SECONDS = 5
+SUPPORTED_RESUME_EXTENSIONS = {".txt", ".pdf", ".docx"}
+SUPPORTED_JOB_FILE_EXTENSIONS = {".txt", ".md"}
 
 _embedding_provider = None
 _local_embedding_model = None
@@ -173,9 +183,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     try:
         payload = _parse_body(event)
-        job_description = payload["job_description"]
+        job_description = _job_description_from_payload(payload)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return _response(400, {"message": f"Invalid request body: {exc}"})
+    except urllib.error.URLError:
+        logger.exception("Failed to read job description URL")
+        return _response(502, {"message": "Unable to read job description URL"})
 
     if not isinstance(job_description, str) or not job_description.strip():
         return _response(400, {"message": "job_description must be a non-empty string"})
@@ -478,8 +491,14 @@ def _read_resume_object_from_s3() -> dict[str, Any]:
 
     s3_object = s3_client.get_object(Bucket=bucket, Key=key)
     etag = s3_object.get("ETag", "").strip('"') or "unknown"
+    body = s3_object["Body"].read()
     return {
-        "text": s3_object["Body"].read().decode("utf-8"),
+        "text": _extract_text_from_supported_document(
+            body,
+            key,
+            SUPPORTED_RESUME_EXTENSIONS,
+            "resume",
+        ),
         "source": {
             "bucket": bucket,
             "key": key,
@@ -621,6 +640,193 @@ def _load_embedding_model() -> Any:
         _local_embedding_model = SentenceTransformer(_semantic_model_name())
 
     return _local_embedding_model
+
+
+def _job_description_from_payload(payload: dict[str, Any]) -> str:
+    input_fields = [
+        name
+        for name in ("job_description", "job_description_file", "job_description_url")
+        if payload.get(name) is not None
+    ]
+    if len(input_fields) != 1:
+        raise ValueError(
+            "provide exactly one of job_description, job_description_file, "
+            "or job_description_url"
+        )
+
+    if "job_description" in input_fields:
+        return payload["job_description"]
+
+    if "job_description_file" in input_fields:
+        return _job_description_from_file_payload(payload["job_description_file"])
+
+    return _job_description_from_url(payload["job_description_url"])
+
+
+def _job_description_from_file_payload(file_payload: dict[str, Any]) -> str:
+    if not isinstance(file_payload, dict):
+        raise ValueError("job_description_file must be an object")
+
+    filename = file_payload.get("filename")
+    content = file_payload.get("content")
+    if not isinstance(filename, str) or not filename.strip():
+        raise ValueError("job_description_file.filename must be a non-empty string")
+    if not isinstance(content, str):
+        raise ValueError("job_description_file.content must be a string")
+
+    if file_payload.get("is_base64_encoded"):
+        body = base64.b64decode(content)
+    else:
+        body = content.encode("utf-8")
+
+    return _extract_text_from_supported_document(
+        body,
+        filename,
+        SUPPORTED_JOB_FILE_EXTENSIONS,
+        "job description",
+    )
+
+
+def _job_description_from_url(url: str) -> str:
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("job_description_url must be a non-empty string")
+
+    parsed_url = urllib.parse.urlparse(url)
+    _validate_job_description_url(parsed_url)
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "aws-resume-matcher/2.1"},
+    )
+    with urllib.request.urlopen(
+        request,
+        timeout=JOB_DESCRIPTION_URL_TIMEOUT_SECONDS,
+    ) as response:
+        body = response.read(MAX_JOB_DESCRIPTION_URL_BYTES + 1)
+        if len(body) > MAX_JOB_DESCRIPTION_URL_BYTES:
+            raise ValueError("job_description_url response is too large")
+
+        content_type = response.headers.get("Content-Type", "")
+
+    if "text/html" in content_type.casefold() or _document_extension(url) in {
+        ".htm",
+        ".html",
+    }:
+        return _extract_text_from_html(_decode_text(body))
+
+    return _decode_text(body)
+
+
+def _validate_job_description_url(parsed_url: urllib.parse.ParseResult) -> None:
+    if parsed_url.scheme not in {"http", "https"}:
+        raise ValueError("job_description_url must use http or https")
+    if not parsed_url.hostname:
+        raise ValueError("job_description_url must include a hostname")
+    if parsed_url.username or parsed_url.password:
+        raise ValueError("job_description_url must not include credentials")
+
+    hostname = parsed_url.hostname.casefold()
+    if hostname in {"localhost", "127.0.0.1", "::1"}:
+        raise ValueError("job_description_url must not point to localhost")
+
+    try:
+        ip_address = ipaddress.ip_address(hostname)
+    except ValueError:
+        return
+
+    if ip_address.is_private or ip_address.is_loopback or ip_address.is_link_local:
+        raise ValueError("job_description_url must not point to a private address")
+
+
+def _extract_text_from_supported_document(
+    body: bytes,
+    source_name: str,
+    supported_extensions: set[str],
+    label: str,
+) -> str:
+    extension = _document_extension(source_name)
+    if extension not in supported_extensions:
+        supported = ", ".join(sorted(supported_extensions))
+        raise ValueError(f"Unsupported {label} file type {extension!r}; use {supported}")
+
+    if extension in {".txt", ".md"}:
+        return _decode_text(body)
+    if extension == ".pdf":
+        return _extract_text_from_pdf(body)
+    if extension == ".docx":
+        return _extract_text_from_docx(body)
+
+    raise ValueError(f"Unsupported {label} file type {extension!r}")
+
+
+def _document_extension(source_name: str) -> str:
+    path = urllib.parse.urlparse(source_name).path
+    _, extension = os.path.splitext(path)
+    return extension.casefold()
+
+
+def _decode_text(body: bytes) -> str:
+    return body.decode("utf-8-sig")
+
+
+def _extract_text_from_pdf(body: bytes) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:
+        raise RuntimeError("PDF resume intake requires the pypdf package.") from exc
+
+    reader = PdfReader(BytesIO(body))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+def _extract_text_from_docx(body: bytes) -> str:
+    try:
+        from docx import Document
+    except ImportError as exc:
+        raise RuntimeError("DOCX resume intake requires the python-docx package.") from exc
+
+    document = Document(BytesIO(body))
+    parts = [paragraph.text for paragraph in document.paragraphs]
+    for table in document.tables:
+        for row in table.rows:
+            parts.extend(cell.text for cell in row.cells)
+
+    return "\n".join(part for part in parts if part)
+
+
+def _extract_text_from_html(html_text: str) -> str:
+    parser = HTMLTextExtractor()
+    parser.feed(html_text)
+    parser.close()
+    return parser.text()
+
+
+class HTMLTextExtractor(html.parser.HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+        self._ignored_tag_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"script", "style", "noscript"}:
+            self._ignored_tag_depth += 1
+        if tag in {"br", "p", "div", "li", "section", "article", "h1", "h2", "h3"}:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"script", "style", "noscript"} and self._ignored_tag_depth:
+            self._ignored_tag_depth -= 1
+        if tag in {"p", "div", "li", "section", "article", "h1", "h2", "h3"}:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self._ignored_tag_depth:
+            return
+        stripped_data = data.strip()
+        if stripped_data:
+            self.parts.append(stripped_data)
+
+    def text(self) -> str:
+        return re.sub(r"\s+", " ", " ".join(self.parts)).strip()
 
 
 def _extract_keywords(text: str) -> set[str]:
