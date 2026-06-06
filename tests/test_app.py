@@ -6,8 +6,15 @@ import pytest
 
 
 class FakeS3Client:
-    def __init__(self, body_text="Python AWS Lambda S3 APIs", error=None, etag=None):
+    def __init__(
+        self,
+        body_text="Python AWS Lambda S3 APIs",
+        body_bytes=None,
+        error=None,
+        etag=None,
+    ):
         self.body_text = body_text
+        self.body_bytes = body_bytes
         self.error = error
         self.etag = etag
         self.calls = []
@@ -16,7 +23,10 @@ class FakeS3Client:
         self.calls.append(kwargs)
         if self.error:
             raise self.error
-        response = {"Body": BytesIO(self.body_text.encode("utf-8"))}
+        body = self.body_bytes
+        if body is None:
+            body = self.body_text.encode("utf-8")
+        response = {"Body": BytesIO(body)}
         if self.etag:
             response["ETag"] = self.etag
         return response
@@ -373,6 +383,132 @@ def test_lambda_handler_rejects_empty_job_description(app_module):
     }
 
 
+def test_lambda_handler_rejects_multiple_job_description_inputs(app_module):
+    response = app_module.lambda_handler(
+        {
+            "httpMethod": "POST",
+            "body": json.dumps(
+                {
+                    "job_description": "Python Lambda",
+                    "job_description_url": "https://example.com/job",
+                }
+            ),
+        },
+        None,
+    )
+
+    assert response["statusCode"] == 400
+    assert "provide exactly one" in response_body(response)["message"]
+
+
+def test_lambda_handler_accepts_job_description_text_file(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "s3_client", FakeS3Client("Python AWS Lambda S3"))
+    monkeypatch.setenv(app_module.RESUME_BUCKET_ENV, "resume-bucket")
+    monkeypatch.setenv(app_module.RESUME_KEY_ENV, "resume.txt")
+
+    response = app_module.lambda_handler(
+        {
+            "httpMethod": "POST",
+            "body": json.dumps(
+                {
+                    "job_description_file": {
+                        "filename": "job.txt",
+                        "content": "Python Lambda API",
+                    }
+                }
+            ),
+        },
+        None,
+    )
+
+    assert response["statusCode"] == 200
+    assert response_body(response) == {
+        "score": 67,
+        "matching_keywords": ["lambda", "python"],
+        "missing_keywords": ["api"],
+    }
+
+
+def test_lambda_handler_accepts_base64_markdown_job_description_file(
+    app_module, monkeypatch
+):
+    monkeypatch.setattr(app_module, "s3_client", FakeS3Client("Python AWS Lambda S3"))
+    monkeypatch.setenv(app_module.RESUME_BUCKET_ENV, "resume-bucket")
+    monkeypatch.setenv(app_module.RESUME_KEY_ENV, "resume.txt")
+    encoded_file = base64.b64encode(b"# Role\nPython Lambda API").decode("utf-8")
+
+    response = app_module.lambda_handler(
+        {
+            "httpMethod": "POST",
+            "body": json.dumps(
+                {
+                    "job_description_file": {
+                        "filename": "job.md",
+                        "content": encoded_file,
+                        "is_base64_encoded": True,
+                    }
+                }
+            ),
+        },
+        None,
+    )
+
+    assert response["statusCode"] == 200
+    assert response_body(response)["matching_keywords"] == ["lambda", "python"]
+
+
+def test_lambda_handler_rejects_unsupported_job_description_file(app_module):
+    response = app_module.lambda_handler(
+        {
+            "httpMethod": "POST",
+            "body": json.dumps(
+                {
+                    "job_description_file": {
+                        "filename": "job.pdf",
+                        "content": "Python Lambda",
+                    }
+                }
+            ),
+        },
+        None,
+    )
+
+    assert response["statusCode"] == 400
+    assert "Unsupported job description file type" in response_body(response)["message"]
+
+
+def test_job_description_from_url_extracts_html_text(app_module, monkeypatch):
+    class FakeUrlResponse:
+        headers = {"Content-Type": "text/html; charset=utf-8"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self, size):
+            return (
+                b"<html><style>ignore</style><body><h1>Python Lambda</h1>"
+                b"<script>ignore</script><p>API Gateway</p></body></html>"
+            )
+
+    monkeypatch.setattr(
+        app_module.urllib.request,
+        "urlopen",
+        lambda request, timeout: FakeUrlResponse(),
+    )
+
+    text = app_module._job_description_from_url("https://example.com/jobs/1")
+
+    assert text == "Python Lambda API Gateway"
+
+
+def test_job_description_url_rejects_private_literal_address(app_module):
+    with pytest.raises(ValueError, match="private address"):
+        app_module._job_description_from_url("http://10.0.0.1/job")
+
+
 def test_lambda_handler_accepts_base64_encoded_json(app_module, monkeypatch):
     s3_client = FakeS3Client("Python AWS Lambda S3")
     monkeypatch.setattr(app_module, "s3_client", s3_client)
@@ -445,3 +581,35 @@ def test_lambda_handler_success_response_structure(app_module, monkeypatch):
     assert body["score"] == 75
     assert body["matching_keywords"] == ["aws", "python", "s3"]
     assert body["missing_keywords"] == ["docker"]
+
+
+def test_read_resume_object_extracts_pdf_by_extension(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "s3_client", FakeS3Client(body_bytes=b"%PDF"))
+    monkeypatch.setattr(app_module, "_extract_text_from_pdf", lambda body: "Python PDF")
+    monkeypatch.setenv(app_module.RESUME_BUCKET_ENV, "resume-bucket")
+    monkeypatch.setenv(app_module.RESUME_KEY_ENV, "resume.pdf")
+
+    resume_object = app_module._read_resume_object_from_s3()
+
+    assert resume_object["text"] == "Python PDF"
+    assert resume_object["source"]["key"] == "resume.pdf"
+
+
+def test_read_resume_object_extracts_docx_by_extension(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "s3_client", FakeS3Client(body_bytes=b"PK"))
+    monkeypatch.setattr(app_module, "_extract_text_from_docx", lambda body: "Python DOCX")
+    monkeypatch.setenv(app_module.RESUME_BUCKET_ENV, "resume-bucket")
+    monkeypatch.setenv(app_module.RESUME_KEY_ENV, "resume.docx")
+
+    resume_object = app_module._read_resume_object_from_s3()
+
+    assert resume_object["text"] == "Python DOCX"
+
+
+def test_read_resume_object_rejects_unsupported_extension(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "s3_client", FakeS3Client(body_bytes=b"rtf"))
+    monkeypatch.setenv(app_module.RESUME_BUCKET_ENV, "resume-bucket")
+    monkeypatch.setenv(app_module.RESUME_KEY_ENV, "resume.rtf")
+
+    with pytest.raises(ValueError, match="Unsupported resume file type"):
+        app_module._read_resume_object_from_s3()
