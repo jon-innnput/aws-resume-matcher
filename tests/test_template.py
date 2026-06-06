@@ -46,3 +46,16 @@ def test_sam_template_scopes_bedrock_and_embedding_cache_permissions():
     assert "s3:GetObject" in template
     assert "s3:PutObject" in template
     assert "arn:${AWS::Partition}:s3:::${CacheBucket}/${EmbeddingCachePrefix}/*" in template
+
+
+def test_sam_template_enables_cors_for_frontend_demo():
+    template = template_text()
+
+    assert "CorsConfiguration:" in template
+    assert "AllowOrigins:" in template
+    assert '- "*"' in template
+    assert "AllowMethods:" in template
+    assert "- OPTIONS" in template
+    assert "- POST" in template
+    assert "AllowHeaders:" in template
+    assert "- Content-Type" in template

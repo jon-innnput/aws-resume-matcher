@@ -184,6 +184,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     try:
         payload = _parse_body(event)
         job_description = _job_description_from_payload(payload)
+        resume_object = _resume_object_from_payload(payload)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return _response(400, {"message": f"Invalid request body: {exc}"})
     except urllib.error.URLError:
@@ -193,18 +194,19 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if not isinstance(job_description, str) or not job_description.strip():
         return _response(400, {"message": "job_description must be a non-empty string"})
 
-    try:
-        resume_object = _read_resume_object_from_s3()
-    except ValueError as exc:
-        return _response(500, {"message": str(exc)})
-    except Exception:
-        logger.exception("Failed to read resume from S3")
-        return _response(502, {"message": "Unable to read resume from S3"})
+    if resume_object is None:
+        try:
+            resume_object = _read_resume_object_from_s3()
+        except ValueError as exc:
+            return _response(500, {"message": str(exc)})
+        except Exception:
+            logger.exception("Failed to read resume from S3")
+            return _response(502, {"message": "Unable to read resume from S3"})
 
     result = compare_resume_to_job(
         resume_object["text"],
         job_description,
-        resume_source=resume_object["source"],
+        resume_source=resume_object.get("source"),
     )
     return _response(200, result)
 
@@ -663,6 +665,20 @@ def _job_description_from_payload(payload: dict[str, Any]) -> str:
     return _job_description_from_url(payload["job_description_url"])
 
 
+def _resume_object_from_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if payload.get("resume_text") is None:
+        return None
+
+    resume_text = payload["resume_text"]
+    if not isinstance(resume_text, str) or not resume_text.strip():
+        raise ValueError("resume_text must be a non-empty string when provided")
+
+    return {
+        "text": resume_text,
+        "source": None,
+    }
+
+
 def _job_description_from_file_payload(file_payload: dict[str, Any]) -> str:
     if not isinstance(file_payload, dict):
         raise ValueError("job_description_file must be an object")
@@ -842,6 +858,9 @@ def _normalize_text(text: str) -> str:
 def _response(status_code: int, body: dict[str, Any]) -> dict[str, Any]:
     return {
         "statusCode": status_code,
-        "headers": {"Content-Type": "application/json"},
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+        },
         "body": json.dumps(body),
     }

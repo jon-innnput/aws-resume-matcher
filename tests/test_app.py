@@ -86,6 +86,13 @@ def response_body(response):
     return json.loads(response["body"])
 
 
+def expected_json_headers():
+    return {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+    }
+
+
 def valid_event(job_description="Python Lambda Terraform"):
     return {
         "httpMethod": "POST",
@@ -360,7 +367,7 @@ def test_lambda_handler_rejects_non_post_requests(app_module):
     response = app_module.lambda_handler({"httpMethod": "GET"}, None)
 
     assert response["statusCode"] == 405
-    assert response["headers"] == {"Content-Type": "application/json"}
+    assert response["headers"] == expected_json_headers()
     assert response_body(response) == {"message": "Method not allowed"}
 
 
@@ -528,7 +535,7 @@ def test_lambda_handler_accepts_base64_encoded_json(app_module, monkeypatch):
     )
 
     assert response["statusCode"] == 200
-    assert response["headers"] == {"Content-Type": "application/json"}
+    assert response["headers"] == expected_json_headers()
     assert response_body(response) == {
         "score": 67,
         "matching_keywords": ["lambda", "python"],
@@ -576,11 +583,96 @@ def test_lambda_handler_success_response_structure(app_module, monkeypatch):
 
     assert set(response) == {"statusCode", "headers", "body"}
     assert response["statusCode"] == 200
-    assert response["headers"] == {"Content-Type": "application/json"}
+    assert response["headers"] == expected_json_headers()
     assert set(body) == {"score", "matching_keywords", "missing_keywords"}
     assert body["score"] == 75
     assert body["matching_keywords"] == ["aws", "python", "s3"]
     assert body["missing_keywords"] == ["docker"]
+
+
+def test_lambda_handler_accepts_direct_resume_text_without_s3(app_module, monkeypatch):
+    s3_client = FakeS3Client(error=AssertionError("S3 should not be called"))
+    monkeypatch.setattr(app_module, "s3_client", s3_client)
+    monkeypatch.delenv(app_module.RESUME_BUCKET_ENV, raising=False)
+    monkeypatch.delenv(app_module.RESUME_KEY_ENV, raising=False)
+
+    response = app_module.lambda_handler(
+        {
+            "httpMethod": "POST",
+            "body": json.dumps(
+                {
+                    "resume_text": "Python AWS Lambda S3",
+                    "job_description": "Python Lambda API",
+                }
+            ),
+        },
+        None,
+    )
+
+    assert response["statusCode"] == 200
+    assert response_body(response) == {
+        "score": 67,
+        "matching_keywords": ["lambda", "python"],
+        "missing_keywords": ["api"],
+    }
+    assert s3_client.calls == []
+
+
+def test_lambda_handler_falls_back_to_s3_when_resume_text_is_not_supplied(
+    app_module, monkeypatch
+):
+    s3_client = FakeS3Client("Python AWS Lambda S3")
+    monkeypatch.setattr(app_module, "s3_client", s3_client)
+    monkeypatch.setenv(app_module.RESUME_BUCKET_ENV, "resume-bucket")
+    monkeypatch.setenv(app_module.RESUME_KEY_ENV, "resume.txt")
+
+    response = app_module.lambda_handler(
+        {
+            "httpMethod": "POST",
+            "body": json.dumps({"job_description": "Python Lambda API"}),
+        },
+        None,
+    )
+
+    assert response["statusCode"] == 200
+    assert response_body(response)["score"] == 67
+    assert s3_client.calls == [{"Bucket": "resume-bucket", "Key": "resume.txt"}]
+
+
+def test_lambda_handler_rejects_empty_resume_text(app_module):
+    response = app_module.lambda_handler(
+        {
+            "httpMethod": "POST",
+            "body": json.dumps(
+                {
+                    "resume_text": "   ",
+                    "job_description": "Python Lambda API",
+                }
+            ),
+        },
+        None,
+    )
+
+    assert response["statusCode"] == 400
+    assert "resume_text must be a non-empty string" in response_body(response)["message"]
+
+
+def test_lambda_handler_rejects_non_string_resume_text(app_module):
+    response = app_module.lambda_handler(
+        {
+            "httpMethod": "POST",
+            "body": json.dumps(
+                {
+                    "resume_text": ["Python", "Lambda"],
+                    "job_description": "Python Lambda API",
+                }
+            ),
+        },
+        None,
+    )
+
+    assert response["statusCode"] == 400
+    assert "resume_text must be a non-empty string" in response_body(response)["message"]
 
 
 def test_read_resume_object_extracts_pdf_by_extension(app_module, monkeypatch):

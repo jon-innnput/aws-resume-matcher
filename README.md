@@ -2,21 +2,22 @@
 
 [![CI](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml)
 [![Deploy](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml)
-![Release](https://img.shields.io/badge/release-v2.1.0-blue)
+![Release](https://img.shields.io/badge/release-v2.2.0-blue)
 ![Python](https://img.shields.io/badge/python-3.13-blue)
 ![AWS SAM](https://img.shields.io/badge/IaC-AWS%20SAM-orange)
 
-AWS Resume Matcher is a serverless AI portfolio project that scores how well a resume matches a job description. It supports `.txt`, `.pdf`, and `.docx` resumes from Amazon S3; direct text, `.txt`, Markdown, and URL-based job descriptions; deterministic keyword scoring; and optional hybrid semantic matching powered by Amazon Bedrock Titan Text Embeddings V2.
+AWS Resume Matcher is a serverless AI portfolio project that scores how well a resume matches a job description. It supports a static frontend demo, direct-text resume input for demos, `.txt`, `.pdf`, and `.docx` resumes from Amazon S3, direct text, `.txt`, Markdown, and URL-based job descriptions, deterministic keyword scoring, and optional hybrid semantic matching powered by Amazon Bedrock Titan Text Embeddings V2.
 
 The project exists to demonstrate a practical AWS application lifecycle: serverless API design, S3-backed data access, infrastructure as code, CI/CD, least-privilege AWS permissions, automated tests, and an incremental path from deterministic keyword matching to guarded semantic AI matching.
 
-**Current status:** v2.1.0 is complete and validated. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
+**Current status:** v2.2.0 is complete and validated. The project now includes a framework-free static frontend demo. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
 
 ## At A Glance
 
 | Area | Capability |
 | --- | --- |
-| Resume intake | `.txt`, `.pdf`, and `.docx` resumes from a private S3 object |
+| Frontend | Framework-free static demo in `frontend/index.html` |
+| Resume intake | Optional direct text for demos, or `.txt`, `.pdf`, and `.docx` resumes from a private S3 object |
 | Job description intake | Direct text, inline `.txt`, inline Markdown, or HTTP/HTTPS URL |
 | Matching | Deterministic keyword overlap with optional hybrid semantic scoring |
 | AI provider | Amazon Bedrock Titan Text Embeddings V2 |
@@ -26,6 +27,7 @@ The project exists to demonstrate a practical AWS application lifecycle: serverl
 
 ## What This Demonstrates
 
+- Framework-free browser demo that calls the deployed serverless API.
 - Serverless API design with Amazon API Gateway and AWS Lambda.
 - Private S3-backed document intake without committing resume data to source control.
 - Lightweight `.txt`, `.pdf`, and `.docx` resume extraction in Python.
@@ -39,7 +41,9 @@ The project exists to demonstrate a practical AWS application lifecycle: serverl
 
 ```mermaid
 flowchart TD
-    User["Client or reviewer"] -->|"POST /match"| Api["Amazon API Gateway<br/>HTTP API"]
+    User["Client or reviewer"] --> Frontend["Static frontend<br/>HTML / CSS / JS"]
+    Frontend -->|"POST /match"| Api["Amazon API Gateway<br/>HTTP API"]
+    User -->|"POST /match"| Api
     Api --> Lambda["AWS Lambda<br/>Python 3.13"]
 
     Lambda --> ResumeInput["Resume intake<br/>S3 .txt / .pdf / .docx"]
@@ -61,6 +65,7 @@ flowchart TD
 
 | Input | Supported formats | Source |
 | --- | --- | --- |
+| Resume | Direct text | Optional `resume_text` JSON field for demos |
 | Resume | `.txt`, `.pdf`, `.docx` | Configured private S3 object through `RESUME_BUCKET` and `RESUME_KEY` |
 | Job description | Direct text | `job_description` JSON field |
 | Job description | `.txt`, `.md` | Inline `job_description_file` JSON object |
@@ -95,6 +100,8 @@ sequenceDiagram
 ## Key Capabilities
 
 - Serverless `POST /match` API backed by API Gateway and AWS Lambda.
+- Static frontend demo for configuring an API endpoint, submitting resume/job text, loading sample inputs, viewing scores, and copying result JSON.
+- Optional direct-text `resume_text` input for demo requests while preserving the configured S3 resume fallback.
 - Resume loaded from a configured private S3 object instead of source control, with `.txt`, `.pdf`, and `.docx` intake support.
 - Job description intake through direct JSON text, inline `.txt` or `.md` file content, or an HTTP/HTTPS URL.
 - Deterministic keyword extraction, stop-word filtering, overlap scoring, matching keywords, and missing keywords.
@@ -129,6 +136,14 @@ sequenceDiagram
 curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
   -H "Content-Type: application/json" \
   -d '{"job_description":"Python developer with AWS Lambda, S3, API Gateway, CI/CD, and semantic search experience."}'
+```
+
+### Direct Text Resume And Job Description
+
+```bash
+curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
+  -H "Content-Type: application/json" \
+  -d '{"resume_text":"Python developer with AWS Lambda and S3 experience.","job_description":"Python developer with AWS Lambda, S3, API Gateway, CI/CD, and semantic search experience."}'
 ```
 
 ### Inline File Job Description
@@ -191,6 +206,7 @@ Exact scores depend on the configured resume object and the submitted job descri
 - **v1.3 Automated Testing**: Added pytest coverage for matching behavior, request handling, and Lambda responses.
 - **v2.0 Semantic AI Matching**: Added guarded Amazon Bedrock semantic matching, hybrid scoring, S3 embedding caching, SAM configuration, and least-privilege IAM while keeping keyword-only mode as the default.
 - **v2.1 Intake Expansion**: Added resume intake for `.txt`, `.pdf`, and `.docx`, plus job-description intake from direct text, inline `.txt`/`.md` content, and URL text extraction.
+- **v2.2 Frontend Demo**: Added a framework-free static frontend and optional direct-text resume intake for reviewer-friendly demos.
 
 ## Local Development
 
@@ -267,9 +283,24 @@ Expected response shape:
 
 The exact values depend on the resume object and job description.
 
+## Frontend Demo
+
+Open `frontend/index.html` in a browser and enter the deployed or local `/match` API endpoint.
+
+The demo provides:
+
+- API endpoint configuration saved in browser local storage.
+- Resume and job-description text areas.
+- Sample resume and sample job-description buttons using fictional content.
+- A match button that calls `POST /match`.
+- Score, keyword, semantic-detail, and raw JSON result displays.
+- Copy Result JSON for sharing or debugging.
+
+When the resume textarea is filled, the frontend sends `resume_text` with the request. When it is blank, the backend falls back to the configured S3 resume object from `RESUME_BUCKET` and `RESUME_KEY`.
+
 ## Intake Formats
 
-Resume intake is still configured by `RESUME_BUCKET` and `RESUME_KEY`, but the object key may now point to:
+Resume intake can be provided directly as `resume_text` for demo requests. If `resume_text` is omitted, resume intake falls back to `RESUME_BUCKET` and `RESUME_KEY`; the object key may point to:
 
 - `.txt`: decoded as UTF-8 text.
 - `.pdf`: extracted with `pypdf`.
@@ -282,6 +313,8 @@ Job descriptions can be submitted in exactly one of these fields:
 - `job_description_url`: An HTTP or HTTPS URL. The Lambda fetches up to 1 MB with a short timeout and extracts readable text from HTML responses with Python standard-library parsing.
 
 URL intake rejects localhost, literal private IP addresses, non-HTTP schemes, and embedded credentials. It does not add any persistent AWS resources, but each URL request performs outbound network I/O from Lambda, so direct text or inline file intake remains the lowest-latency and lowest-variability option.
+
+Direct-text resume intake was added for the v2.2 frontend demo. It does not persist resume content and is intended for reviewer-friendly interaction. Future resume management capabilities may replace or augment this direct-text path with upload, multi-resume, or candidate-ranking workflows.
 
 ## Semantic Matching Configuration
 
@@ -325,6 +358,7 @@ Infrastructure is defined in `template.yaml`. The SAM stack provisions:
 - `ResumeMatcherApi`
 - `ResumeMatcherFunction`
 - Lambda environment variables for `RESUME_BUCKET` and `RESUME_KEY`, which may reference `.txt`, `.pdf`, or `.docx` resume objects
+- HTTP API CORS settings for browser-based frontend demo calls
 - IAM policy allowing the function to read only the configured S3 object
 - Lambda environment variables for guarded Bedrock semantic matching, defaulted off
 - IAM policy allowing scoped `bedrock:InvokeModel` access to the configured embedding model
@@ -423,7 +457,7 @@ No AWS secrets are stored in the repository.
 
 Notes:
 
-- `frontend/index.html` is currently present but empty.
+- `frontend/index.html` is a self-contained static demo with embedded CSS and JavaScript.
 - `sample-data/` is ignored by Git and should not be used for public resume data.
 - `.aws-sam/`, caches, virtual environments, and Python bytecode are ignored.
 
@@ -436,10 +470,11 @@ Notes:
 - **v1.3.0**: Added pytest-based automated testing and updated CI to run tests before SAM validation and build.
 - **v2.0.0**: Added guarded semantic matching with Amazon Bedrock Titan Text Embeddings V2, hybrid keyword + semantic scoring, S3 resume embedding caching and reuse, SAM configuration, and least-privilege IAM while preserving keyword-only behavior by default.
 - **v2.1.0**: Added resume and job-description intake expansion for `.txt`, `.pdf`, `.docx`, `.md`, and URL-based job descriptions while preserving the existing direct-text API behavior.
+- **v2.2.0**: Added a framework-free static frontend demo, direct-text resume input for demos, browser CORS support, sample input loading, result visualization, and Copy Result JSON.
 
 ## Future Roadmap
 
-- Add a small frontend for reviewer-friendly API interaction.
+- Add richer resume management, such as upload, multi-resume support, or candidate ranking with explicit privacy controls.
 - Add richer semantic explanations, such as top matching resume/job text snippets.
 - Add weighted scoring for skills, certifications, seniority, and domain experience.
 - Support multiple resumes and candidate ranking.
