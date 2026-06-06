@@ -6,32 +6,93 @@
 ![Python](https://img.shields.io/badge/python-3.13-blue)
 ![AWS SAM](https://img.shields.io/badge/IaC-AWS%20SAM-orange)
 
-AWS Resume Matcher is a serverless AI portfolio project that compares a resume stored in Amazon S3 against a job description submitted to an API. It returns a match score, matching keywords, missing keywords, and, when explicitly enabled, hybrid semantic matching details powered by Amazon Bedrock Titan Text Embeddings V2.
+AWS Resume Matcher is a serverless AI portfolio project that scores how well a resume matches a job description. It supports `.txt`, `.pdf`, and `.docx` resumes from Amazon S3; direct text, `.txt`, Markdown, and URL-based job descriptions; deterministic keyword scoring; and optional hybrid semantic matching powered by Amazon Bedrock Titan Text Embeddings V2.
 
 The project exists to demonstrate a practical AWS application lifecycle: serverless API design, S3-backed data access, infrastructure as code, CI/CD, least-privilege AWS permissions, automated tests, and an incremental path from deterministic keyword matching to guarded semantic AI matching.
 
 **Current status:** v2.1.0 is complete and validated. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
 
+## At A Glance
+
+| Area | Capability |
+| --- | --- |
+| Resume intake | `.txt`, `.pdf`, and `.docx` resumes from a private S3 object |
+| Job description intake | Direct text, inline `.txt`, inline Markdown, or HTTP/HTTPS URL |
+| Matching | Deterministic keyword overlap with optional hybrid semantic scoring |
+| AI provider | Amazon Bedrock Titan Text Embeddings V2 |
+| Architecture | API Gateway, Lambda, S3, Bedrock, and SAM |
+| Delivery | GitHub Actions CI/CD with OIDC-based AWS deployment |
+| Testing | pytest, SAM validation, SAM build, and Python compilation |
+
+## What This Demonstrates
+
+- Serverless API design with Amazon API Gateway and AWS Lambda.
+- Private S3-backed document intake without committing resume data to source control.
+- Lightweight `.txt`, `.pdf`, and `.docx` resume extraction in Python.
+- Multiple job-description intake paths, including URL and Markdown/TXT payloads.
+- Deterministic keyword scoring with an optional Bedrock semantic layer.
+- S3 embedding-cache design for avoiding repeated resume embedding work.
+- Least-privilege IAM and repeatable infrastructure through AWS SAM.
+- CI/CD with GitHub Actions, OIDC role assumption, and automated pytest coverage.
+
 ## Architecture
 
 ```mermaid
-flowchart LR
-    User["Client or reviewer"] -->|"POST /match"| Api["Amazon API Gateway HTTP API"]
+flowchart TD
+    User["Client or reviewer"] -->|"POST /match"| Api["Amazon API Gateway<br/>HTTP API"]
     Api --> Lambda["AWS Lambda<br/>Python 3.13"]
-    Lambda -->|"s3:GetObject"| S3["Amazon S3<br/>resume .txt/.pdf/.docx"]
-    Lambda -->|"URL job descriptions only"| Url["HTTP/HTTPS<br/>job posting"]
-    Lambda -->|"semantic mode only"| Bedrock["Amazon Bedrock<br/>Titan Text Embeddings V2"]
-    Lambda -->|"cache read/write"| Cache["Amazon S3<br/>embedding cache"]
-    Lambda --> Response["JSON match result"]
-    Response --> User
 
-    GitHub["GitHub Actions"] -->|"OIDC assume role"| IAM["AWS IAM deploy role"]
-    IAM --> SAM["AWS SAM deploy"]
-    SAM --> Api
-    SAM --> Lambda
+    Lambda --> ResumeInput["Resume intake<br/>S3 .txt / .pdf / .docx"]
+    Lambda --> JobInput["Job description intake<br/>text / .txt / .md / URL"]
+    ResumeInput --> Keyword["Keyword matching<br/>overlap + missing terms"]
+    JobInput --> Keyword
+    Keyword --> Semantic{"Semantic matching<br/>enabled?"}
+
+    Semantic -->|"No"| Result["JSON match result"]
+    Semantic -->|"Yes"| Bedrock["Amazon Bedrock<br/>Titan Text Embeddings V2"]
+    Bedrock --> Cache["Amazon S3<br/>resume embedding cache"]
+    Cache --> Hybrid["Hybrid score<br/>keyword + semantic"]
+    Keyword -. "keyword component" .-> Hybrid
+    Hybrid --> Result
+    Result --> User
 ```
 
-## Key Features
+## Supported Inputs
+
+| Input | Supported formats | Source |
+| --- | --- | --- |
+| Resume | `.txt`, `.pdf`, `.docx` | Configured private S3 object through `RESUME_BUCKET` and `RESUME_KEY` |
+| Job description | Direct text | `job_description` JSON field |
+| Job description | `.txt`, `.md` | Inline `job_description_file` JSON object |
+| Job description | URL | `job_description_url` HTTP/HTTPS job posting |
+
+The API accepts exactly one job-description input per request. Resume files remain private S3 objects and are not stored in the repository.
+
+### URL Ingestion Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as API Gateway
+    participant Lambda
+    participant Remote as Job Posting URL
+    participant Parser as Text Extractor
+    participant Matcher as Matching Engine
+
+    Client->>API: POST /match with job_description_url
+    API->>Lambda: Invoke Lambda
+    Lambda->>Lambda: Validate URL scheme, host, and credentials
+    Lambda->>Remote: Fetch job posting
+    Remote-->>Lambda: HTML or text response
+    Lambda->>Lambda: Enforce response size cap
+    Lambda->>Parser: Extract readable text
+    Parser-->>Lambda: Job description text
+    Lambda->>Matcher: Compare resume and job description
+    Matcher-->>Lambda: Score, matching keywords, missing keywords
+    Lambda-->>Client: JSON response
+```
+
+## Key Capabilities
 
 - Serverless `POST /match` API backed by API Gateway and AWS Lambda.
 - Resume loaded from a configured private S3 object instead of source control, with `.txt`, `.pdf`, and `.docx` intake support.
@@ -60,9 +121,9 @@ flowchart LR
 - Pytest
 - Optional local semantic validation with `sentence-transformers/all-MiniLM-L6-v2`
 
-## Demo
+## Example Requests And Responses
 
-Sample direct-text request:
+### Direct Text Job Description
 
 ```bash
 curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
@@ -70,7 +131,7 @@ curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
   -d '{"job_description":"Python developer with AWS Lambda, S3, API Gateway, CI/CD, and semantic search experience."}'
 ```
 
-Sample inline file request:
+### Inline File Job Description
 
 ```bash
 curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
@@ -78,7 +139,7 @@ curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
   -d '{"job_description_file":{"filename":"job.md","content":"# Role\nPython developer with AWS Lambda and S3 experience."}}'
 ```
 
-Sample URL request:
+### URL Job Description
 
 ```bash
 curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
@@ -86,7 +147,7 @@ curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
   -d '{"job_description_url":"https://example.com/jobs/serverless-python-developer"}'
 ```
 
-Sample keyword-only response:
+### Keyword-Only Response
 
 ```json
 {
@@ -96,7 +157,7 @@ Sample keyword-only response:
 }
 ```
 
-Sample semantic-mode response:
+### Semantic-Mode Response
 
 ```json
 {
@@ -114,7 +175,7 @@ Sample semantic-mode response:
 }
 ```
 
-Score fields:
+### Score Fields
 
 - `score`: The final match score returned to the client. In keyword-only mode, this is the keyword score. In semantic mode, this is the weighted hybrid score.
 - `keyword_score`: The percentage of extracted job-description keywords found in the resume. Present when semantic mode is enabled.
