@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AWS Resume Matcher Demo</title>
+  <style>
+    :root {
+      --bg: #f7f8f3;
+      --panel: #ffffff;
+      --ink: #17202a;
+      --muted: #65717f;
+      --line: #d9ded6;
+      --blue: #1f6feb;
+      --green: #287d3c;
+      --amber: #a15c00;
+      --red: #b42318;
+      --chip: #eef5f1;
+      --shadow: 0 16px 40px rgba(28, 38, 47, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    header {
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 72px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.35rem;
+      font-weight: 750;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      white-space: nowrap;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--amber);
+    }
+
+    main {
+      padding: 28px 0 40px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 390px;
+      gap: 22px;
+      align-items: start;
+    }
+
+    section,
+    aside {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .form-panel,
+    .result-panel {
+      padding: 22px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    label {
+      color: #26313d;
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    input,
+    textarea {
+      width: 100%;
+      border: 1px solid #bfc8bf;
+      border-radius: 7px;
+      color: var(--ink);
+      background: #fbfcfa;
+      font: inherit;
+      transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+    }
+
+    input {
+      min-height: 44px;
+      padding: 10px 12px;
+    }
+
+    textarea {
+      min-height: 300px;
+      resize: vertical;
+      padding: 12px;
+    }
+
+    input:focus,
+    textarea:focus {
+      outline: none;
+      border-color: var(--blue);
+      background: #ffffff;
+      box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.16);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 2px;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    button {
+      min-height: 40px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      padding: 9px 13px;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+      transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.65;
+    }
+
+    .primary {
+      background: var(--blue);
+      color: #ffffff;
+      box-shadow: 0 8px 18px rgba(31, 111, 235, 0.22);
+    }
+
+    .secondary {
+      background: #eef5f1;
+      color: #1f3d2b;
+      border-color: #c9d8ce;
+    }
+
+    .ghost {
+      background: #ffffff;
+      color: #233242;
+      border-color: #c9d0d6;
+    }
+
+    .score-wrap {
+      display: grid;
+      gap: 16px;
+      place-items: center;
+      padding: 18px 0 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .score {
+      display: grid;
+      place-items: center;
+      width: 164px;
+      aspect-ratio: 1;
+      border-radius: 999px;
+      color: #ffffff;
+      background: conic-gradient(var(--green) 0deg, var(--green) var(--score-angle), #dde5dc var(--score-angle), #dde5dc 360deg);
+      position: relative;
+    }
+
+    .score::after {
+      content: "";
+      position: absolute;
+      inset: 13px;
+      border-radius: inherit;
+      background: #ffffff;
+    }
+
+    .score-value {
+      position: relative;
+      z-index: 1;
+      color: var(--ink);
+      font-size: 2.8rem;
+      font-weight: 800;
+    }
+
+    .score-value span {
+      font-size: 1rem;
+      color: var(--muted);
+      margin-left: 2px;
+    }
+
+    .result-block {
+      padding-top: 18px;
+    }
+
+    .result-block h2,
+    .result-block h3 {
+      margin: 0 0 10px;
+      font-size: 1rem;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-height: 34px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      min-height: 28px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      background: var(--chip);
+      color: #244b31;
+      border: 1px solid #c9d8ce;
+      font-size: 0.88rem;
+      overflow-wrap: anywhere;
+    }
+
+    .chip.missing {
+      background: #fff6e8;
+      color: #724300;
+      border-color: #edd1a6;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fbfcfa;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 1.25rem;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    pre {
+      max-height: 260px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #101820;
+      color: #eff7ff;
+      font-size: 0.85rem;
+    }
+
+    .message {
+      margin-top: 14px;
+      border-radius: 8px;
+      padding: 11px 12px;
+      font-weight: 650;
+    }
+
+    .message.error {
+      color: var(--red);
+      background: #fff1ee;
+      border: 1px solid #f2b8b1;
+    }
+
+    .message.info {
+      color: #245164;
+      background: #edf7fb;
+      border: 1px solid #b7dce8;
+    }
+
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      padding: 80px 10px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @media (max-width: 920px) {
+      .layout,
+      .row {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 18px 0;
+      }
+
+      textarea {
+        min-height: 240px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="shell topbar">
+      <h1>AWS Resume Matcher</h1>
+      <div class="status" aria-live="polite"><span class="status-dot" id="statusDot"></span><span id="statusText">Ready</span></div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <div class="layout">
+      <section class="form-panel" aria-labelledby="demoFormHeading">
+        <h2 id="demoFormHeading" class="hidden">Match form</h2>
+
+        <div class="field">
+          <label for="apiEndpoint">API endpoint</label>
+          <input id="apiEndpoint" type="url" placeholder="https://example.execute-api.us-east-1.amazonaws.com/match" autocomplete="off">
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="resumeText">Resume text</label>
+            <textarea id="resumeText" spellcheck="true" placeholder="Paste resume content here. Leave blank to use the configured S3 resume."></textarea>
+            <button class="secondary" type="button" id="loadResume">Load Sample Resume</button>
+          </div>
+
+          <div class="field">
+            <label for="jobText">Job description</label>
+            <textarea id="jobText" spellcheck="true" placeholder="Paste the job description here."></textarea>
+            <button class="secondary" type="button" id="loadJob">Load Sample Job Description</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <div class="button-row">
+            <button class="primary" type="button" id="matchButton">Match</button>
+            <button class="ghost" type="button" id="clearButton">Clear</button>
+          </div>
+          <button class="ghost" type="button" id="copyJson" disabled>Copy Result JSON</button>
+        </div>
+
+        <div id="message" class="message hidden" role="status" aria-live="polite"></div>
+      </section>
+
+      <aside class="result-panel" aria-labelledby="resultsHeading">
+        <h2 id="resultsHeading">Results</h2>
+        <div id="emptyState" class="empty">Run a match to see the score and keyword breakdown.</div>
+        <div id="results" class="hidden">
+          <div class="score-wrap">
+            <div class="score" id="scoreRing" style="--score-angle: 0deg">
+              <div class="score-value"><span id="scoreValue">0</span><span>%</span></div>
+            </div>
+          </div>
+
+          <div id="semanticMetrics" class="metric-grid hidden"></div>
+
+          <div class="result-block">
+            <h3>Matching Keywords</h3>
+            <div class="chips" id="matchingKeywords"></div>
+          </div>
+
+          <div class="result-block">
+            <h3>Missing Keywords</h3>
+            <div class="chips" id="missingKeywords"></div>
+          </div>
+
+          <div class="result-block">
+            <h3>Result JSON</h3>
+            <pre id="rawJson"></pre>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const sampleResume = `Jordan Lee
+Cloud Application Developer
+
+Experience
+- Built Python services on AWS Lambda behind API Gateway.
+- Automated S3 document workflows and deployment checks with GitHub Actions.
+- Developed serverless data processing jobs with DynamoDB, CloudWatch, and IAM.
+- Wrote pytest suites for API validation, error handling, and CI/CD pipelines.
+- Prototyped semantic search features using embeddings and cached vectors.`;
+
+    const sampleJob = `We are looking for a Python developer with hands-on AWS serverless experience.
+The role works with Lambda, API Gateway, S3, CI/CD pipelines, IAM, automated tests,
+and semantic search or embeddings. Experience with DynamoDB and CloudWatch is a plus.`;
+
+    const endpointInput = document.getElementById("apiEndpoint");
+    const resumeInput = document.getElementById("resumeText");
+    const jobInput = document.getElementById("jobText");
+    const matchButton = document.getElementById("matchButton");
+    const clearButton = document.getElementById("clearButton");
+    const copyJsonButton = document.getElementById("copyJson");
+    const loadResumeButton = document.getElementById("loadResume");
+    const loadJobButton = document.getElementById("loadJob");
+    const message = document.getElementById("message");
+    const emptyState = document.getElementById("emptyState");
+    const results = document.getElementById("results");
+    const scoreRing = document.getElementById("scoreRing");
+    const scoreValue = document.getElementById("scoreValue");
+    const matchingKeywords = document.getElementById("matchingKeywords");
+    const missingKeywords = document.getElementById("missingKeywords");
+    const semanticMetrics = document.getElementById("semanticMetrics");
+    const rawJson = document.getElementById("rawJson");
+    const statusText = document.getElementById("statusText");
+    const statusDot = document.getElementById("statusDot");
+
+    let latestResult = null;
+
+    endpointInput.value = localStorage.getItem("resumeMatcherApiEndpoint") || "";
+
+    endpointInput.addEventListener("change", () => {
+      localStorage.setItem("resumeMatcherApiEndpoint", endpointInput.value.trim());
+    });
+
+    loadResumeButton.addEventListener("click", () => {
+      resumeInput.value = sampleResume;
+      setMessage("Sample resume loaded.", "info");
+    });
+
+    loadJobButton.addEventListener("click", () => {
+      jobInput.value = sampleJob;
+      setMessage("Sample job description loaded.", "info");
+    });
+
+    clearButton.addEventListener("click", () => {
+      resumeInput.value = "";
+      jobInput.value = "";
+      latestResult = null;
+      copyJsonButton.disabled = true;
+      results.classList.add("hidden");
+      emptyState.classList.remove("hidden");
+      setMessage("Inputs cleared.", "info");
+      setStatus("Ready", "#a15c00");
+    });
+
+    copyJsonButton.addEventListener("click", async () => {
+      if (!latestResult) {
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(latestResult, null, 2));
+        setMessage("Result JSON copied.", "info");
+      } catch (error) {
+        setMessage("Unable to copy result JSON from this browser context.", "error");
+      }
+    });
+
+    matchButton.addEventListener("click", async () => {
+      const endpoint = endpointInput.value.trim();
+      const resumeText = resumeInput.value.trim();
+      const jobDescription = jobInput.value.trim();
+
+      if (!endpoint) {
+        setMessage("Enter the deployed /match API endpoint.", "error");
+        endpointInput.focus();
+        return;
+      }
+
+      if (!jobDescription) {
+        setMessage("Enter a job description before matching.", "error");
+        jobInput.focus();
+        return;
+      }
+
+      localStorage.setItem("resumeMatcherApiEndpoint", endpoint);
+      const payload = { job_description: jobDescription };
+      if (resumeText) {
+        payload.resume_text = resumeText;
+      }
+
+      setBusy(true);
+      setMessage("Matching in progress.", "info");
+      setStatus("Matching", "#1f6feb");
+
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const text = await response.text();
+        const data = text ? JSON.parse(text) : {};
+
+        if (!response.ok) {
+          throw new Error(data.message || `Request failed with status ${response.status}`);
+        }
+
+        latestResult = data;
+        renderResult(data);
+        setMessage("Match complete.", "info");
+        setStatus("Complete", "#287d3c");
+      } catch (error) {
+        latestResult = null;
+        copyJsonButton.disabled = true;
+        setMessage(error.message || "Unable to complete the match request.", "error");
+        setStatus("Error", "#b42318");
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    function setBusy(isBusy) {
+      matchButton.disabled = isBusy;
+      matchButton.textContent = isBusy ? "Matching..." : "Match";
+    }
+
+    function setStatus(text, color) {
+      statusText.textContent = text;
+      statusDot.style.background = color;
+    }
+
+    function setMessage(text, type) {
+      message.textContent = text;
+      message.className = `message ${type}`;
+      message.classList.remove("hidden");
+    }
+
+    function renderResult(result) {
+      const score = Number(result.score) || 0;
+      const clampedScore = Math.max(0, Math.min(100, score));
+      scoreRing.style.setProperty("--score-angle", `${clampedScore * 3.6}deg`);
+      scoreValue.textContent = clampedScore;
+
+      renderChips(matchingKeywords, result.matching_keywords || [], false);
+      renderChips(missingKeywords, result.missing_keywords || [], true);
+      renderSemanticMetrics(result);
+
+      rawJson.textContent = JSON.stringify(result, null, 2);
+      emptyState.classList.add("hidden");
+      results.classList.remove("hidden");
+      copyJsonButton.disabled = false;
+    }
+
+    function renderChips(container, items, isMissing) {
+      container.textContent = "";
+
+      if (!items.length) {
+        const empty = document.createElement("span");
+        empty.className = "chip" + (isMissing ? " missing" : "");
+        empty.textContent = "None";
+        container.appendChild(empty);
+        return;
+      }
+
+      items.forEach((item) => {
+        const chip = document.createElement("span");
+        chip.className = "chip" + (isMissing ? " missing" : "");
+        chip.textContent = item;
+        container.appendChild(chip);
+      });
+    }
+
+    function renderSemanticMetrics(result) {
+      const hasSemantic = "keyword_score" in result || "semantic_score" in result;
+      semanticMetrics.textContent = "";
+      semanticMetrics.classList.toggle("hidden", !hasSemantic);
+
+      if (!hasSemantic) {
+        return;
+      }
+
+      const metrics = [
+        ["Keyword", result.keyword_score],
+        ["Semantic", result.semantic_score]
+      ];
+
+      metrics.forEach(([label, value]) => {
+        if (value === undefined) {
+          return;
+        }
+
+        const metric = document.createElement("div");
+        metric.className = "metric";
+        metric.innerHTML = `<strong>${Number(value) || 0}%</strong><span>${label} score</span>`;
+        semanticMetrics.appendChild(metric);
+      });
+    }
+  </script>
+</body>
+</html>

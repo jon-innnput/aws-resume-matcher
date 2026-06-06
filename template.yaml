@@ -71,6 +71,14 @@ Resources:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: $default
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - OPTIONS
+          - POST
+        AllowHeaders:
+          - Content-Type
 
   ResumeMatcherFunction:
     Type: AWS::Serverless::Function
