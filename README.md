@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml)
 [![Deploy](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml)
-![Release](https://img.shields.io/badge/release-v2.2.0-blue)
+![Release](https://img.shields.io/badge/release-v2.2.1-blue)
 ![Python](https://img.shields.io/badge/python-3.13-blue)
 ![AWS SAM](https://img.shields.io/badge/IaC-AWS%20SAM-orange)
 
@@ -10,7 +10,7 @@ AWS Resume Matcher is a serverless AI portfolio project that scores how well a r
 
 The project exists to demonstrate a practical AWS application lifecycle: serverless API design, S3-backed data access, infrastructure as code, CI/CD, least-privilege AWS permissions, automated tests, and an incremental path from deterministic keyword matching to guarded semantic AI matching.
 
-**Current status:** v2.2.0 is complete and validated. The project now includes a framework-free static frontend demo. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
+**Current status:** v2.2.1 is complete. The project includes a framework-free static frontend demo and clearer deployment documentation for locating the deployed API endpoint. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
 
 ## At A Glance
 
@@ -375,6 +375,22 @@ sam deploy
 
 The repository includes `samconfig.toml` with default build and deploy settings. Review the deploy parameter values before using them in another AWS account. Semantic matching remains disabled by default in `samconfig.toml`.
 
+### Finding The Deployed API Endpoint
+
+After deployment, list the stack outputs:
+
+```bash
+sam list stack-outputs --stack-name <stack-name>
+```
+
+Look for the `ApiEndpoint` output. It should look similar to:
+
+```text
+https://abc123.execute-api.us-east-1.amazonaws.com/match
+```
+
+Use that endpoint in `curl` requests or in the frontend demo's API endpoint field.
+
 The SAM template exposes these semantic parameters:
 
 - `SemanticMatchingEnabled`
@@ -471,6 +487,7 @@ Notes:
 - **v2.0.0**: Added guarded semantic matching with Amazon Bedrock Titan Text Embeddings V2, hybrid keyword + semantic scoring, S3 resume embedding caching and reuse, SAM configuration, and least-privilege IAM while preserving keyword-only behavior by default.
 - **v2.1.0**: Added resume and job-description intake expansion for `.txt`, `.pdf`, `.docx`, `.md`, and URL-based job descriptions while preserving the existing direct-text API behavior.
 - **v2.2.0**: Added a framework-free static frontend demo, direct-text resume input for demos, browser CORS support, sample input loading, result visualization, and Copy Result JSON.
+- **v2.2.1**: Improved README deployment instructions for locating the deployed API endpoint from SAM stack outputs.
 
 ## Future Roadmap
 
