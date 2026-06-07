@@ -4,13 +4,13 @@
 
 AWS Resume Matcher is a serverless AI portfolio project that scores how well a resume matches a job description. It demonstrates a practical AWS application lifecycle: a Python Lambda API, S3-backed data access, infrastructure as code with AWS SAM, GitHub Actions CI/CD using OIDC authentication, automated testing, and guarded semantic matching with Amazon Bedrock.
 
-The codebase includes v2.4.0 semantic experiment support on top of v2.3.0 keyword quality improvements, v2.2.0 frontend demo support, v2.1.0 resume and job-description intake expansion, and v2.0.0 guarded semantic matching. Semantic matching is guarded by `SEMANTIC_MATCHING_ENABLED=false` by default, so the deployed Lambda behavior remains keyword-based unless explicitly enabled with the required embedding provider configuration and AWS permissions.
+The codebase includes v2.5.0 explainable fit analysis on top of the v2.4.0 semantic chunking experiment, v2.3.0 keyword quality improvements, v2.2.0 frontend demo support, v2.1.0 resume and job-description intake expansion, and v2.0.0 guarded semantic matching. Semantic matching is guarded by `SEMANTIC_MATCHING_ENABLED=false` by default, so the deployed Lambda behavior remains keyword-based unless explicitly enabled with the required embedding provider configuration and AWS permissions.
 
-The public repository presentation should position the project for recruiters, hiring managers, AWS reviewers, and technical audiences. The README should lead with what the app does, why it exists, current v2.4.0 status, architecture, key features, project evolution, frontend demo usage, demo request/response examples, and then setup/deployment details.
+The public repository presentation should position the project for recruiters, hiring managers, AWS reviewers, and technical audiences. The README should lead with what the app does, why it exists, current v2.5.0 status, architecture, key features, project evolution, frontend demo usage, demo request/response examples, and then setup/deployment details.
 
 ## Business Problem Being Solved
 
-Hiring teams and job seekers often need a quick way to compare a resume against a job description. This project provides a simple matching API that highlights overlapping and missing keywords, and now includes a guarded semantic AI path that can capture meaning beyond exact keyword overlap.
+Hiring teams and job seekers often need a quick way to compare a resume against a job description. This project provides a matching API that highlights overlapping and missing keywords, and now includes a guarded semantic AI path that can capture meaning beyond exact keyword overlap and explain which job requirements have supporting resume evidence.
 
 This is not an applicant tracking system and does not make hiring decisions. It is a lightweight matching demonstration intended for technical evaluation and future extension. The product direction after v2.4.0 is to evolve from a Resume Matcher toward an **Explainable Candidate Fit Analyzer**.
 
@@ -31,13 +31,13 @@ flowchart TD
 
 The API accepts an optional `resume_text` string for demo-oriented direct-text resume intake. If `resume_text` is omitted, Lambda reads the configured resume object from S3 and extracts text from `.txt`, `.pdf`, or `.docx` resume objects. The API accepts exactly one job-description input: a `job_description` string, a `job_description_file` object for inline `.txt`/`.md` content, or a `job_description_url`. It extracts normalized keywords from both texts, filters stop words and obvious token noise, calculates a percentage score, and returns matching and missing keywords.
 
-When semantic matching is explicitly enabled, the matcher calculates semantic similarity through an embedding provider abstraction and returns hybrid score details. The production-focused provider is Amazon Bedrock Titan Text Embeddings V2 with S3-cached whole-resume embeddings. End-to-end runtime validation has confirmed Bedrock invocation, semantic scoring, S3 cache creation, S3 cache reuse, IAM permissions, and the API Gateway to Lambda to Bedrock flow. The local `sentence-transformers/all-MiniLM-L6-v2` provider remains available for validation. SAM exposes semantic configuration and IAM, but semantic matching remains disabled by default.
+When semantic matching is explicitly enabled, the matcher calculates semantic similarity through an embedding provider abstraction and returns hybrid score details. It also parses candidate job requirements, splits resume evidence chunks, scores requirement-to-evidence support with keyword overlap and semantic similarity, and returns `matched_requirements` plus `gaps`. The production-focused provider is Amazon Bedrock Titan Text Embeddings V2 with S3-cached resume embeddings. End-to-end runtime validation has confirmed Bedrock invocation, semantic scoring, S3 cache creation, S3 cache reuse, IAM permissions, and the API Gateway to Lambda to Bedrock flow. The local `sentence-transformers/all-MiniLM-L6-v2` provider remains available for validation. SAM exposes semantic configuration and IAM, but semantic matching remains disabled by default.
 
 v2.4.0 added an experimental `chunked_semantic_score` field in semantic mode for side-by-side comparison with the current whole-document `semantic_score`. This experiment did not redesign caching, final scoring, API requests, section parsing, or requirement extraction.
 
 ## Key Files and Responsibilities
 
-- `lambda/app.py`: Lambda handler, request parsing, optional direct-text resume intake, S3 resume retrieval with ETag metadata, resume/job-description text extraction, keyword extraction, embedding provider abstraction, Bedrock embedding provider, S3 resume embedding cache, guarded semantic scoring helpers, scoring, CORS-friendly headers, and JSON response creation.
+- `lambda/app.py`: Lambda handler, request parsing, optional direct-text resume intake, S3 resume retrieval with ETag metadata, resume/job-description text extraction, keyword extraction, embedding provider abstraction, Bedrock embedding provider, S3 resume embedding cache, guarded semantic scoring helpers, requirement-to-evidence fit analysis, scoring, CORS-friendly headers, and JSON response creation.
 - `lambda/requirements.txt`: Lambda package dependencies for lightweight PDF and DOCX text extraction.
 - `tests/`: Pytest suite covering keyword extraction, comparison scoring, intake parsing, semantic scoring with mocked embeddings, Bedrock provider calls, S3 embedding cache behavior, request validation, error handling, and Lambda response structure with mocked AWS access.
 - `requirements-dev.txt`: Local and CI development test dependencies.
@@ -95,7 +95,8 @@ The current `main` branch contains the completed SAM, CI/CD, automated testing, 
 - **v2.1 Intake Expansion**: Resume intake for `.txt`, `.pdf`, and `.docx`, plus job-description intake from direct text, inline `.txt`/`.md` content, and URL text extraction.
 - **v2.2 Frontend Demo**: Framework-free static frontend and optional direct-text resume intake for reviewer-friendly demos.
 - **v2.3 Keyword Quality Improvements**: Cleaner deterministic keyword extraction that filters numeric-list artifacts, contraction fragments, trailing punctuation, and selected low-value job-description filler while preserving technical terms such as AWS, S3, CI/CD, C++, and C#.
-- **v2.4 Semantic Experiment**: Added an experimental `chunked_semantic_score` to compare current whole-document semantic scoring against simple paragraph/bullet chunked semantic matching using the same resume and job-description inputs.
+- **v2.4 Semantic Chunking Experiment**: Whole-document and simple paragraph/bullet chunked semantic score comparison, with real-world validation showing generic chunking did not materially improve scoring.
+- **v2.5 Explainable Fit Analysis MVP**: Semantic-mode matched requirements, gaps, and supporting resume evidence produced by deterministic requirement parsing, resume evidence chunking, keyword overlap, and semantic similarity.
 
 ## v2.4.0 Semantic Experiment Findings
 
@@ -205,9 +206,10 @@ Not managed by `template.yaml`:
 - **Bedrock production path**: Uses Amazon Titan Text Embeddings V2 through `bedrock-runtime` so standard SAM ZIP packaging can be preserved.
 - **URL intake guardrails**: URL job descriptions use standard-library HTTP fetching with a short timeout, a 1 MB response cap, and rejection of localhost, literal private IP addresses, non-HTTP schemes, and embedded credentials.
 - **S3 resume embedding cache**: Avoids recomputing resume embeddings on every request by keying cached JSON embeddings on resume bucket, key, ETag, model ID, dimensions, normalization setting, and schema version.
+- **Explainability as semantic-mode add-on**: v2.5.0 adds matched requirements and gaps only when semantic matching is enabled, preserving keyword-only response behavior and the existing top-level scoring model.
 - **v2.4 semantic experiment kept separate from production scoring**: `chunked_semantic_score` is returned for comparison in semantic mode, but the final `score` still uses the existing whole-document `semantic_score`.
 - **Do not productionize generic chunked semantic matching**: Real-world v2.4.0 testing showed `semantic_score = 33` and `chunked_semantic_score = 30`, so generic chunking did not materially improve semantic relevance.
-- **Explainability over document similarity**: The next product improvement should measure candidate fit through matched requirements, gaps, and supporting resume evidence rather than relying on semantic similarity alone.
+- **Explainability over document similarity**: Candidate fit should be measured through matched requirements, gaps, and supporting resume evidence rather than relying on semantic similarity alone.
 - **Semantic disabled by default**: SAM carries the required configuration and IAM, but `SemanticMatchingEnabled` defaults to `false`.
 - **AWS SAM over manual console setup**: Makes the deployable infrastructure explicit and repeatable.
 - **HTTP API over REST API**: Keeps the API Gateway configuration lightweight for a single POST route.
@@ -218,8 +220,8 @@ Not managed by `template.yaml`:
 ## Known Limitations
 
 - Production matching is keyword overlap by default; semantic matching is present only as an explicitly enabled guarded path.
+- Requirement parsing is deterministic and intentionally lightweight; v2.5.0 does not classify requirements, infer importance, or use LLM extraction.
 - v2.4.0 generic chunked semantic scoring is experimental only and should not be treated as the future production semantic design.
-- The API does not yet produce `matched_requirements`, `gaps`, or supporting resume evidence.
 - The deployment workflow does not yet pass semantic parameter overrides for enabling semantic matching.
 - The API supports one configured resume object at a time when using S3-backed intake.
 - Direct-text `resume_text` intake is intended for demos and does not provide persistent resume management.
@@ -230,24 +232,13 @@ Not managed by `template.yaml`:
 
 ## Recommended Next Enhancements
 
-The next milestone should be **v2.5.0 Explainable Fit Analysis MVP**.
-
-Near-term v2.5.0 focus:
-
-- Add `matched_requirements`.
-- Add `gaps`.
-- Include supporting resume evidence for matched requirements.
-- Keep the existing scoring model intact initially.
-- Avoid LLM extraction in the first MVP unless explicitly approved later.
-- Use existing keyword extraction, semantic matching helpers, and deterministic logic where possible.
-
-The v2.5.0 MVP should not reuse the v2.4.0 milestone label. v2.4.0 has already been completed, merged, deployed, tested, tagged, and released.
+v2.5.0 established the first Explainable Fit Analysis MVP with `matched_requirements`, `gaps`, and supporting resume evidence in semantic mode. Future enhancements should build on that requirement-to-evidence foundation without reusing the v2.4.0 semantic experiment milestone label.
 
 Additional future enhancements:
 
 - Add API-level integration tests using SAM local or a deployed test stack.
 - Add resume upload or multi-resume support with explicit privacy controls. This may replace or augment the v2.2 direct-text resume demo path.
-- Add richer fit explanations, such as top supporting resume snippets for job requirements.
+- Add requirement classification, importance weighting, and richer evidence ranking on top of the v2.5.0 requirement-to-evidence matching foundation.
 - Add structured logging and CloudWatch alarms.
 - Add a dev/prod environment strategy with separate stacks and repository variables.
 - Add API authentication before public exposure.

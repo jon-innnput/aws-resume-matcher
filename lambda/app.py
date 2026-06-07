@@ -39,6 +39,7 @@ DEFAULT_EMBEDDING_CACHE_PREFIX = "embeddings/resume"
 EMBEDDING_CACHE_SCHEMA_VERSION = "1.0"
 DEFAULT_KEYWORD_SCORE_WEIGHT = 0.45
 DEFAULT_SEMANTIC_SCORE_WEIGHT = 0.55
+MATCHED_REQUIREMENT_MIN_SCORE = 60
 MAX_JOB_DESCRIPTION_URL_BYTES = 1_000_000
 JOB_DESCRIPTION_URL_TIMEOUT_SECONDS = 5
 SUPPORTED_RESUME_EXTENSIONS = {".txt", ".pdf", ".docx"}
@@ -48,6 +49,21 @@ KEYWORD_TRAILING_PUNCTUATION = ".,;:!?)]}"
 CONTRACTION_FRAGMENTS = {"d", "ll", "m", "re", "s", "t", "ve"}
 LOW_VALUE_KEYWORDS = {"responsibilities", "responsibility", "role", "responses", "systems"}
 KEYWORD_ALIASES = {"apis": "api"}
+WEAK_REQUIREMENT_HEADINGS = {
+    "about",
+    "about us",
+    "benefits",
+    "description",
+    "job description",
+    "overview",
+    "preferred qualifications",
+    "qualifications",
+    "requirements",
+    "responsibilities",
+    "role",
+    "summary",
+    "what you will do",
+}
 
 _embedding_provider = None
 _local_embedding_model = None
@@ -364,6 +380,11 @@ def compare_resume_to_job(
         job_description,
         embedding_model=embedding_provider,
     )
+    fit_analysis = build_fit_analysis(
+        resume_text,
+        job_description,
+        embedding_model=embedding_provider,
+    )
     score = combine_scores(keyword_score, semantic_score)
 
     return {
@@ -373,6 +394,8 @@ def compare_resume_to_job(
         "chunked_semantic_score": chunked_semantic_score,
         "matching_keywords": matching_keywords,
         "missing_keywords": missing_keywords,
+        "matched_requirements": fit_analysis["matched_requirements"],
+        "gaps": fit_analysis["gaps"],
         "semantic_model": embedding_provider.model_id,
         "semantic_provider": _semantic_embedding_provider_name(),
         "weights": {
@@ -434,8 +457,160 @@ def calculate_chunked_semantic_score(
     return round((sum(best_matches) / len(best_matches)) * 100)
 
 
+def build_fit_analysis(
+    resume_text: str,
+    job_description: str,
+    embedding_model: Any | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    requirement_matches = _score_requirement_evidence(
+        _extract_requirement_candidates(job_description),
+        _extract_resume_evidence_chunks(resume_text),
+        embedding_model,
+    )
+
+    matched_requirements = []
+    gaps = []
+    for match in requirement_matches:
+        if match["score"] >= MATCHED_REQUIREMENT_MIN_SCORE and match["evidence"]:
+            matched_requirements.append(
+                {
+                    "requirement": match["requirement"],
+                    "score": match["score"],
+                    "evidence": match["evidence"],
+                }
+            )
+        else:
+            gaps.append(
+                {
+                    "requirement": match["requirement"],
+                    "score": match["score"],
+                }
+            )
+
+    return {
+        "matched_requirements": matched_requirements,
+        "gaps": gaps,
+        "_requirement_evidence_scores": requirement_matches,
+    }
+
+
+def _score_requirement_evidence(
+    requirements: Sequence[str],
+    evidence_chunks: Sequence[str],
+    embedding_model: Any | None = None,
+) -> list[dict[str, Any]]:
+    if not requirements:
+        return []
+
+    evidence_keywords = {
+        evidence: _extract_keywords(evidence)
+        for evidence in evidence_chunks
+    }
+    evidence_embeddings = {}
+    if embedding_model is not None:
+        evidence_embeddings = {
+            evidence: embedding_model.encode(evidence)
+            for evidence in evidence_chunks
+        }
+
+    matches = []
+    for requirement in requirements:
+        requirement_keywords = _extract_keywords(requirement)
+        requirement_embedding = (
+            embedding_model.encode(requirement)
+            if embedding_model is not None and evidence_chunks
+            else None
+        )
+        best_match = {
+            "requirement": requirement,
+            "score": 0,
+            "evidence": "",
+            "keyword_score": 0,
+            "semantic_score": None,
+            "matching_keywords": [],
+        }
+
+        for evidence in evidence_chunks:
+            matching_keywords = requirement_keywords & evidence_keywords[evidence]
+            keyword_score = (
+                round((len(matching_keywords) / len(requirement_keywords)) * 100)
+                if requirement_keywords
+                else 0
+            )
+            semantic_score = None
+            score = keyword_score
+            if requirement_embedding is not None:
+                semantic_score = round(
+                    max(
+                        0.0,
+                        cosine_similarity(
+                            requirement_embedding,
+                            evidence_embeddings[evidence],
+                        ),
+                    )
+                    * 100
+                )
+                score = combine_scores(keyword_score, semantic_score)
+
+            if score > best_match["score"]:
+                best_match = {
+                    "requirement": requirement,
+                    "score": score,
+                    "evidence": evidence,
+                    "keyword_score": keyword_score,
+                    "semantic_score": semantic_score,
+                    "matching_keywords": sorted(matching_keywords),
+                }
+
+        matches.append(best_match)
+
+    return matches
+
+
+def _extract_requirement_candidates(job_description: str) -> list[str]:
+    candidates = []
+    seen = set()
+    for chunk in _chunk_job_description_text(job_description):
+        candidate = _normalize_requirement_candidate(chunk)
+        if not candidate or candidate.casefold() in seen:
+            continue
+        seen.add(candidate.casefold())
+        candidates.append(candidate)
+
+    return candidates
+
+
+def _normalize_requirement_candidate(text: str) -> str:
+    candidate = _normalize_chunk_text(text).strip(" -:;")
+    if not candidate:
+        return ""
+
+    normalized = candidate.casefold()
+    if normalized in WEAK_REQUIREMENT_HEADINGS:
+        return ""
+
+    keywords = _extract_keywords(candidate)
+    if len(candidate) < 8 or len(keywords) < 2:
+        return ""
+
+    return candidate
+
+
+def _extract_resume_evidence_chunks(resume_text: str) -> list[str]:
+    return _chunk_resume_text(resume_text)
+
+
 def _chunk_resume_text(text: str) -> list[str]:
-    return _split_paragraph_chunks(text)
+    chunks = []
+    for block in _split_text_blocks(text):
+        bullet_chunks = _split_bullet_chunks(block)
+        if bullet_chunks:
+            chunks.extend(bullet_chunks)
+        elif normalized := _normalize_chunk_text(block):
+            chunks.append(normalized)
+
+    return chunks
+
 
 
 def _chunk_job_description_text(text: str) -> list[str]:

@@ -260,6 +260,21 @@ def test_chunk_resume_text_splits_paragraphs(app_module):
     ]
 
 
+def test_chunk_resume_text_splits_bullets(app_module):
+    chunks = app_module._chunk_resume_text(
+        """
+        Experience:
+        - Built AWS Lambda APIs
+        - Integrated S3 storage
+        """
+    )
+
+    assert chunks == [
+        "Built AWS Lambda APIs",
+        "Integrated S3 storage",
+    ]
+
+
 def test_chunk_job_description_text_splits_paragraphs_and_bullets(app_module):
     chunks = app_module._chunk_job_description_text(
         """
@@ -275,6 +290,24 @@ def test_chunk_job_description_text_splits_paragraphs_and_bullets(app_module):
         "Build AI systems on AWS.",
         "Own Lambda services",
         "Integrate Bedrock embeddings",
+    ]
+
+
+def test_extract_requirement_candidates_filters_headings(app_module):
+    requirements = app_module._extract_requirement_candidates(
+        """
+        Responsibilities:
+        - Build AWS Lambda APIs
+        - S3
+        - Own CI/CD pipelines
+
+        About us
+        """
+    )
+
+    assert requirements == [
+        "Build AWS Lambda APIs",
+        "Own CI/CD pipelines",
     ]
 
 
@@ -304,6 +337,51 @@ def test_calculate_chunked_semantic_score_can_surface_localized_match(app_module
 
     assert whole_document_score == 0
     assert chunked_score == 100
+
+
+def test_build_fit_analysis_matches_requirements_and_gaps(app_module):
+    resume_text = """
+    Built AWS Lambda APIs with S3 storage.
+
+    Managed retail schedules.
+    """
+    job_description = """
+    Requirements:
+    - Build AWS Lambda APIs
+    - Use Terraform for infrastructure
+    """
+    model = FakeEmbeddingModel(
+        {
+            "Built AWS Lambda APIs with S3 storage.": [1, 0],
+            "Managed retail schedules.": [0, 1],
+            "Build AWS Lambda APIs": [1, 0],
+            "Use Terraform for infrastructure": [0, -1],
+        }
+    )
+
+    analysis = app_module.build_fit_analysis(resume_text, job_description, model)
+
+    assert analysis["matched_requirements"] == [
+        {
+            "requirement": "Build AWS Lambda APIs",
+            "score": 89,
+            "evidence": "Built AWS Lambda APIs with S3 storage.",
+        }
+    ]
+    assert analysis["gaps"] == [
+        {
+            "requirement": "Use Terraform for infrastructure",
+            "score": 0,
+        }
+    ]
+    assert analysis["_requirement_evidence_scores"][0] == {
+        "requirement": "Build AWS Lambda APIs",
+        "score": 89,
+        "evidence": "Built AWS Lambda APIs with S3 storage.",
+        "keyword_score": 75,
+        "semantic_score": 100,
+        "matching_keywords": ["api", "aws", "lambda"],
+    }
 
 
 def test_bedrock_embedding_provider_invokes_titan_v2_with_dimensions(app_module):
@@ -482,6 +560,14 @@ def test_compare_resume_to_job_adds_semantic_fields_when_enabled(
         "chunked_semantic_score": 100,
         "matching_keywords": ["lambda", "python", "s3"],
         "missing_keywords": ["terraform"],
+        "matched_requirements": [
+            {
+                "requirement": "Python Lambda Terraform S3",
+                "score": 89,
+                "evidence": "Python AWS Lambda S3 DynamoDB",
+            }
+        ],
+        "gaps": [],
         "semantic_model": "fake-model",
         "semantic_provider": "bedrock",
         "weights": {
