@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml)
 [![Deploy](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml)
-![Release](https://img.shields.io/badge/release-v2.2.1-blue)
+![Release](https://img.shields.io/badge/release-v2.3.0-blue)
 ![Python](https://img.shields.io/badge/python-3.13-blue)
 ![AWS SAM](https://img.shields.io/badge/IaC-AWS%20SAM-orange)
 
@@ -10,7 +10,7 @@ AWS Resume Matcher is a serverless AI portfolio project that scores how well a r
 
 The project exists to demonstrate a practical AWS application lifecycle: serverless API design, S3-backed data access, infrastructure as code, CI/CD, least-privilege AWS permissions, automated tests, and an incremental path from deterministic keyword matching to guarded semantic AI matching.
 
-**Current status:** v2.2.1 is complete. The project includes a framework-free static frontend demo and clearer deployment documentation for locating the deployed API endpoint. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
+**Current status:** v2.3.0 is complete. The project includes a framework-free static frontend demo, direct-text resume intake for demos, and improved keyword extraction quality for cleaner match explanations. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
 
 ## At A Glance
 
@@ -104,7 +104,7 @@ sequenceDiagram
 - Optional direct-text `resume_text` input for demo requests while preserving the configured S3 resume fallback.
 - Resume loaded from a configured private S3 object instead of source control, with `.txt`, `.pdf`, and `.docx` intake support.
 - Job description intake through direct JSON text, inline `.txt` or `.md` file content, or an HTTP/HTTPS URL.
-- Deterministic keyword extraction, stop-word filtering, overlap scoring, matching keywords, and missing keywords.
+- Deterministic keyword extraction with stop-word filtering, punctuation cleanup, token-artifact filtering, overlap scoring, matching keywords, and missing keywords.
 - Guarded hybrid keyword + semantic scoring using Amazon Bedrock Titan Text Embeddings V2.
 - S3 embedding cache keyed by resume bucket, resume key, S3 ETag, embedding model, dimensions, normalization setting, and cache schema version.
 - AWS SAM infrastructure as code for API Gateway, Lambda, environment variables, IAM policies, and stack outputs.
@@ -207,6 +207,7 @@ Exact scores depend on the configured resume object and the submitted job descri
 - **v2.0 Semantic AI Matching**: Added guarded Amazon Bedrock semantic matching, hybrid scoring, S3 embedding caching, SAM configuration, and least-privilege IAM while keeping keyword-only mode as the default.
 - **v2.1 Intake Expansion**: Added resume intake for `.txt`, `.pdf`, and `.docx`, plus job-description intake from direct text, inline `.txt`/`.md` content, and URL text extraction.
 - **v2.2 Frontend Demo**: Added a framework-free static frontend and optional direct-text resume intake for reviewer-friendly demos.
+- **v2.3 Keyword Quality Improvements**: Reduced keyword noise from numeric-list artifacts, contraction fragments, trailing punctuation, and generic job-description filler while preserving technical terms such as AWS, S3, CI/CD, C++, and C#.
 
 ## Local Development
 
@@ -466,6 +467,8 @@ No AWS secrets are stored in the repository.
 |-- README.md
 |-- RELEASE_NOTES_v2.0.0.md
 |-- RELEASE_NOTES_v2.1.0.md
+|-- RELEASE_NOTES_v2.2.0.md
+|-- RELEASE_NOTES_v2.3.0.md
 |-- requirements-dev.txt
 |-- samconfig.toml
 `-- template.yaml
@@ -488,6 +491,7 @@ Notes:
 - **v2.1.0**: Added resume and job-description intake expansion for `.txt`, `.pdf`, `.docx`, `.md`, and URL-based job descriptions while preserving the existing direct-text API behavior.
 - **v2.2.0**: Added a framework-free static frontend demo, direct-text resume input for demos, browser CORS support, sample input loading, result visualization, and Copy Result JSON.
 - **v2.2.1**: Improved README deployment instructions for locating the deployed API endpoint from SAM stack outputs.
+- **v2.3.0**: Improved keyword extraction quality by filtering numeric-list artifacts, contraction fragments, trailing punctuation, and selected low-value noise tokens while preserving important technical terms.
 
 ## Future Roadmap
 
