@@ -245,6 +245,67 @@ def test_calculate_semantic_score_clamps_negative_similarity(app_module):
     assert app_module.calculate_semantic_score("resume", "job", model) == 0
 
 
+def test_chunk_resume_text_splits_paragraphs(app_module):
+    chunks = app_module._chunk_resume_text(
+        """
+        AWS Bedrock and Lambda platform work.
+
+        Python APIs with S3 integrations.
+        """
+    )
+
+    assert chunks == [
+        "AWS Bedrock and Lambda platform work.",
+        "Python APIs with S3 integrations.",
+    ]
+
+
+def test_chunk_job_description_text_splits_paragraphs_and_bullets(app_module):
+    chunks = app_module._chunk_job_description_text(
+        """
+        Build AI systems on AWS.
+
+        Responsibilities:
+        - Own Lambda services
+        - Integrate Bedrock embeddings
+        """
+    )
+
+    assert chunks == [
+        "Build AI systems on AWS.",
+        "Own Lambda services",
+        "Integrate Bedrock embeddings",
+    ]
+
+
+def test_calculate_chunked_semantic_score_can_surface_localized_match(app_module):
+    resume_text = "AWS Bedrock Lambda.\n\nUnrelated sales operations."
+    job_description = "Responsibilities:\n- Build AWS Bedrock systems"
+    model = FakeEmbeddingModel(
+        {
+            resume_text: [0, 1],
+            job_description: [1, 0],
+            "AWS Bedrock Lambda.": [1, 0],
+            "Unrelated sales operations.": [0, 1],
+            "Build AWS Bedrock systems": [1, 0],
+        }
+    )
+
+    whole_document_score = app_module.calculate_semantic_score(
+        resume_text,
+        job_description,
+        model,
+    )
+    chunked_score = app_module.calculate_chunked_semantic_score(
+        resume_text,
+        job_description,
+        model,
+    )
+
+    assert whole_document_score == 0
+    assert chunked_score == 100
+
+
 def test_bedrock_embedding_provider_invokes_titan_v2_with_dimensions(app_module):
     client = FakeBedrockClient([0.1, 0.2])
     provider = app_module.BedrockEmbeddingProvider(
@@ -418,6 +479,7 @@ def test_compare_resume_to_job_adds_semantic_fields_when_enabled(
         "score": 89,
         "keyword_score": 75,
         "semantic_score": 100,
+        "chunked_semantic_score": 100,
         "matching_keywords": ["lambda", "python", "s3"],
         "missing_keywords": ["terraform"],
         "semantic_model": "fake-model",

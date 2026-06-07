@@ -359,12 +359,18 @@ def compare_resume_to_job(
         resume_source=resume_source,
         embedding_cache=embedding_cache,
     )
+    chunked_semantic_score = calculate_chunked_semantic_score(
+        resume_text,
+        job_description,
+        embedding_model=embedding_provider,
+    )
     score = combine_scores(keyword_score, semantic_score)
 
     return {
         "score": score,
         "keyword_score": keyword_score,
         "semantic_score": semantic_score,
+        "chunked_semantic_score": chunked_semantic_score,
         "matching_keywords": matching_keywords,
         "missing_keywords": missing_keywords,
         "semantic_model": embedding_provider.model_id,
@@ -401,6 +407,77 @@ def calculate_semantic_score(
     job_embedding = model.encode(job_description)
     similarity = max(0.0, cosine_similarity(resume_embedding, job_embedding))
     return round(similarity * 100)
+
+
+def calculate_chunked_semantic_score(
+    resume_text: str,
+    job_description: str,
+    embedding_model: Any | None = None,
+) -> int:
+    model = embedding_model or _load_embedding_provider()
+    resume_chunks = _chunk_resume_text(resume_text)
+    job_chunks = _chunk_job_description_text(job_description)
+
+    if not resume_chunks or not job_chunks:
+        return 0
+
+    resume_embeddings = [model.encode(chunk) for chunk in resume_chunks]
+    job_embeddings = [model.encode(chunk) for chunk in job_chunks]
+    best_matches = [
+        max(
+            max(0.0, cosine_similarity(job_embedding, resume_embedding))
+            for resume_embedding in resume_embeddings
+        )
+        for job_embedding in job_embeddings
+    ]
+
+    return round((sum(best_matches) / len(best_matches)) * 100)
+
+
+def _chunk_resume_text(text: str) -> list[str]:
+    return _split_paragraph_chunks(text)
+
+
+def _chunk_job_description_text(text: str) -> list[str]:
+    chunks = []
+    for block in _split_text_blocks(text):
+        bullet_chunks = _split_bullet_chunks(block)
+        if bullet_chunks:
+            chunks.extend(bullet_chunks)
+        elif normalized := _normalize_chunk_text(block):
+            chunks.append(normalized)
+
+    return chunks
+
+
+def _split_paragraph_chunks(text: str) -> list[str]:
+    return [
+        normalized
+        for part in _split_text_blocks(text)
+        if (normalized := _normalize_chunk_text(part))
+    ]
+
+
+def _split_text_blocks(text: str) -> list[str]:
+    return re.split(r"\n\s*\n+", text)
+
+
+def _normalize_chunk_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _split_bullet_chunks(text: str) -> list[str]:
+    bullet_matches = list(
+        re.finditer(
+            r"(?ms)^\s*(?:[-*+]|\d+[.)])\s+(.+?)(?=^\s*(?:[-*+]|\d+[.)])\s+|\Z)",
+            text,
+        )
+    )
+    return [
+        normalized
+        for match in bullet_matches
+        if (normalized := _normalize_chunk_text(match.group(1)))
+    ]
 
 
 def _get_resume_embedding(
