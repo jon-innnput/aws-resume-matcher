@@ -43,6 +43,11 @@ MAX_JOB_DESCRIPTION_URL_BYTES = 1_000_000
 JOB_DESCRIPTION_URL_TIMEOUT_SECONDS = 5
 SUPPORTED_RESUME_EXTENSIONS = {".txt", ".pdf", ".docx"}
 SUPPORTED_JOB_FILE_EXTENSIONS = {".txt", ".md"}
+KEYWORD_TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9+#./-]*")
+KEYWORD_TRAILING_PUNCTUATION = ".,;:!?)]}"
+CONTRACTION_FRAGMENTS = {"d", "ll", "m", "re", "s", "t", "ve"}
+LOW_VALUE_KEYWORDS = {"responsibilities", "responsibility", "role", "responses", "systems"}
+KEYWORD_ALIASES = {"apis": "api"}
 
 _embedding_provider = None
 _local_embedding_model = None
@@ -847,12 +852,36 @@ class HTMLTextExtractor(html.parser.HTMLParser):
 
 def _extract_keywords(text: str) -> set[str]:
     normalized_text = _normalize_text(text)
-    words = re.findall(r"[a-z0-9][a-z0-9+#.-]*", normalized_text)
-    return {word for word in words if word not in STOP_WORDS and len(word) > 1}
+    return {
+        keyword
+        for raw_keyword in KEYWORD_TOKEN_PATTERN.findall(normalized_text)
+        if (keyword := _clean_keyword(raw_keyword))
+    }
+
+
+def _clean_keyword(raw_keyword: str) -> str:
+    keyword = raw_keyword.strip(KEYWORD_TRAILING_PUNCTUATION)
+    keyword = KEYWORD_ALIASES.get(keyword, keyword)
+
+    if (
+        len(keyword) <= 1
+        or keyword in STOP_WORDS
+        or keyword in CONTRACTION_FRAGMENTS
+        or keyword in LOW_VALUE_KEYWORDS
+        or keyword[0].isdigit()
+        or _is_tokenization_artifact(keyword)
+    ):
+        return ""
+
+    return keyword
+
+
+def _is_tokenization_artifact(keyword: str) -> bool:
+    return not any(character.isalpha() for character in keyword)
 
 
 def _normalize_text(text: str) -> str:
-    return text.casefold()
+    return text.casefold().replace("'", " ").replace("’", " ")
 
 
 def _response(status_code: int, body: dict[str, Any]) -> dict[str, Any]:

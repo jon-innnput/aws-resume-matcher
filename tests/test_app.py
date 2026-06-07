@@ -105,7 +105,73 @@ def test_extract_keywords_normalizes_and_filters_stop_words(app_module):
         "The Python, AWS-Lambda and C++ APIs are in production."
     )
 
-    assert keywords == {"python", "aws-lambda", "c++", "apis", "production."}
+    assert keywords == {"python", "aws-lambda", "c++", "api", "production"}
+
+
+def test_extract_keywords_removes_resume_match_noise(app_module):
+    keywords = app_module._extract_keywords(
+        """
+        1. You'll build responses. 2. We've owned systems. 3+ years. 3px spacing.
+        Role. AWS Bedrock Lambda S3 API CI/CD C++ C# serverless integrations.
+        """
+    )
+
+    assert keywords == {
+        "api",
+        "aws",
+        "bedrock",
+        "build",
+        "c#",
+        "c++",
+        "ci/cd",
+        "integrations",
+        "lambda",
+        "owned",
+        "s3",
+        "serverless",
+        "spacing",
+        "years",
+    }
+    assert {"1", "2", "3+", "3px", "ll", "ve", "role", "responses", "systems"}.isdisjoint(
+        keywords
+    )
+
+
+def test_compare_resume_to_job_uses_cleaned_realistic_keywords(app_module):
+    result = app_module.compare_resume_to_job(
+        """
+        Senior software engineer building AWS Lambda APIs with S3, Bedrock,
+        CI/CD pipelines, C++ services, and C# integration tooling.
+        """,
+        """
+        1. Role. You'll build AWS Lambda, S3, API Gateway, Bedrock, and CI/CD
+        systems. 2. We need C++ or C# experience. 3+ years. 3px design tokens.
+        Responses.
+        """,
+    )
+
+    assert result == {
+        "score": 53,
+        "matching_keywords": [
+            "api",
+            "aws",
+            "bedrock",
+            "c#",
+            "c++",
+            "ci/cd",
+            "lambda",
+            "s3",
+        ],
+        "missing_keywords": [
+            "build",
+            "design",
+            "experience",
+            "gateway",
+            "need",
+            "tokens",
+            "years",
+        ],
+    }
 
 
 def test_compare_resume_to_job_returns_score_matches_and_missing(app_module):
