@@ -380,7 +380,29 @@ def test_build_fit_analysis_matches_requirements_and_gaps(app_module):
         "evidence": "Built AWS Lambda APIs with S3 storage.",
         "keyword_score": 75,
         "semantic_score": 100,
+        "alias_score": 0,
         "matching_keywords": ["api", "aws", "lambda"],
+        "matching_aliases": [],
+        "top_evidence": [
+            {
+                "evidence": "Built AWS Lambda APIs with S3 storage.",
+                "score": 89,
+                "keyword_score": 75,
+                "semantic_score": 100,
+                "alias_score": 0,
+                "matching_keywords": ["api", "aws", "lambda"],
+                "matching_aliases": [],
+            },
+            {
+                "evidence": "Managed retail schedules.",
+                "score": 0,
+                "keyword_score": 0,
+                "semantic_score": 0,
+                "alias_score": 0,
+                "matching_keywords": [],
+                "matching_aliases": [],
+            },
+        ],
     }
     assert analysis["_score_summary"] == {
         "requirement_count": 2,
@@ -415,6 +437,120 @@ def test_build_fit_analysis_calibrates_mid_range_semantic_matches(app_module):
     assert analysis["gaps"] == []
     assert analysis["_requirement_evidence_scores"][0]["keyword_score"] == 0
     assert analysis["_requirement_evidence_scores"][0]["semantic_score"] == 75
+
+
+def test_fit_analysis_ranks_program_project_management_alias_evidence(app_module):
+    resume_text = """
+    20+ years of program management experience leading cross-functional delivery.
+
+    Built executive dashboards for content operations.
+    """
+    job_description = """
+    Requirements:
+    - 5+ years of experience in program/project management
+    """
+    model = FakeEmbeddingModel(
+        {
+            "20+ years of program management experience leading cross-functional delivery.": [
+                0.8930285549745876,
+                0.45,
+            ],
+            "Built executive dashboards for content operations.": [1, 0],
+            "5+ years of experience in program/project management": [0, 1],
+        }
+    )
+
+    analysis = app_module.build_fit_analysis(resume_text, job_description, model)
+    match = analysis["_requirement_evidence_scores"][0]
+
+    assert analysis["matched_requirements"] == [
+        {
+            "requirement": "5+ years of experience in program/project management",
+            "score": 68,
+            "evidence": (
+                "20+ years of program management experience leading "
+                "cross-functional delivery."
+            ),
+        }
+    ]
+    assert match["alias_score"] == 50
+    assert match["matching_aliases"] == ["program_management"]
+    assert match["top_evidence"][0]["evidence"] == (
+        "20+ years of program management experience leading cross-functional delivery."
+    )
+    assert match["top_evidence"][0]["alias_score"] == 50
+    assert len(match["top_evidence"]) == 2
+
+
+def test_fit_analysis_ranks_ai_ml_phrase_variants(app_module):
+    resume_text = """
+    Built artificial intelligence and machine learning tooling for model evaluation.
+
+    Managed release schedules for internal platforms.
+    """
+    job_description = """
+    Requirements:
+    - Experience with AI/ML tools
+    """
+    model = FakeEmbeddingModel(
+        {
+            "Built artificial intelligence and machine learning tooling for model evaluation.": [
+                0.44,
+                0.8979977728257459,
+            ],
+            "Managed release schedules for internal platforms.": [0, 1],
+            "Experience with AI/ML tools": [1, 0],
+        }
+    )
+
+    analysis = app_module.build_fit_analysis(resume_text, job_description, model)
+    match = analysis["_requirement_evidence_scores"][0]
+
+    assert analysis["matched_requirements"] == [
+        {
+            "requirement": "Experience with AI/ML tools",
+            "score": 44,
+            "evidence": (
+                "Built artificial intelligence and machine learning tooling "
+                "for model evaluation."
+            ),
+        }
+    ]
+    assert match["alias_score"] == 100
+    assert match["matching_aliases"] == ["ai_ml"]
+
+
+def test_score_requirement_evidence_keeps_top_three_diagnostics(app_module):
+    requirements = ["Experience with AI/ML tools"]
+    evidence_chunks = [
+        "Built artificial intelligence and machine learning tooling.",
+        "Built AI/ML tools for internal model evaluation.",
+        "Managed project schedules.",
+        "Owned unrelated support queues.",
+    ]
+    model = FakeEmbeddingModel(
+        {
+            "Built artificial intelligence and machine learning tooling.": [1, 0],
+            "Built AI/ML tools for internal model evaluation.": [0.9, 0.4358898943540673],
+            "Managed project schedules.": [0, 1],
+            "Owned unrelated support queues.": [0, 1],
+            "Experience with AI/ML tools": [1, 0],
+        }
+    )
+
+    matches = app_module._score_requirement_evidence(
+        requirements,
+        evidence_chunks,
+        model,
+    )
+
+    assert matches[0]["evidence"] == "Built AI/ML tools for internal model evaluation."
+    assert [candidate["evidence"] for candidate in matches[0]["top_evidence"]] == [
+        "Built AI/ML tools for internal model evaluation.",
+        "Built artificial intelligence and machine learning tooling.",
+        "Managed project schedules.",
+    ]
+    assert len(matches[0]["top_evidence"]) == 3
 
 
 def test_bedrock_embedding_provider_invokes_titan_v2_with_dimensions(app_module):

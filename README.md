@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml)
 [![Deploy](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml)
-![Release](https://img.shields.io/badge/release-v2.5.1-blue)
+![Release](https://img.shields.io/badge/release-v2.6.0-blue)
 ![Python](https://img.shields.io/badge/python-3.13-blue)
 ![AWS SAM](https://img.shields.io/badge/IaC-AWS%20SAM-orange)
 
@@ -10,7 +10,7 @@ AWS Resume Matcher is a serverless AI portfolio project that scores how well a r
 
 The project exists to demonstrate a practical AWS application lifecycle: serverless API design, S3-backed data access, infrastructure as code, CI/CD, least-privilege AWS permissions, automated tests, and an incremental path from deterministic keyword matching to guarded semantic AI matching.
 
-**Current status:** v2.5.1 is complete. The project includes a framework-free static frontend demo, direct-text resume intake for demos, improved keyword extraction quality, a v2.4.0 chunked semantic scoring experiment, semantic-mode explainable fit analysis, and calibrated requirement matching for real Bedrock/Titan score ranges. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
+**Current status:** v2.6.0 is complete. The project includes a framework-free static frontend demo, direct-text resume intake for demos, improved keyword extraction quality, a v2.4.0 chunked semantic scoring experiment, semantic-mode explainable fit analysis, calibrated requirement matching for real Bedrock/Titan score ranges, and improved evidence retrieval for phrase variants such as `program/project management` and `AI/ML`. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
 
 ## At A Glance
 
@@ -34,6 +34,7 @@ The project exists to demonstrate a practical AWS application lifecycle: serverl
 - Multiple job-description intake paths, including URL and Markdown/TXT payloads.
 - Deterministic keyword scoring with an optional Bedrock semantic layer.
 - Semantic-mode explainable fit analysis with matched job requirements, likely gaps, and supporting resume evidence.
+- Requirement-to-evidence ranking with scoped phrase alias handling and internal top-evidence diagnostics.
 - S3 embedding-cache design for avoiding repeated resume embedding work.
 - Least-privilege IAM and repeatable infrastructure through AWS SAM.
 - CI/CD with GitHub Actions, OIDC role assumption, and automated pytest coverage.
@@ -235,6 +236,7 @@ The MVP match threshold is now `40`. This keeps clearly weak evidence in `gaps` 
 - **v2.4 Semantic Chunking Experiment**: Added whole-document and simple chunked semantic score comparison, confirming generic chunked semantic matching should remain experimental rather than become the product direction.
 - **v2.5 Explainable Fit Analysis MVP**: Added semantic-mode matched requirements, likely gaps, and supporting resume evidence while preserving the existing scoring model and keyword-only response shape.
 - **v2.5.1 Fit Analysis Calibration**: Lowered the matched requirement threshold based on real Bedrock/Titan score distributions and added privacy-safe score summary diagnostics.
+- **v2.6 Evidence Retrieval & Chunk Ranking**: Improved requirement-to-evidence chunk selection with scoped alias handling, alias-aware ranking, and internal top-3 evidence diagnostics while preserving the public response contract.
 
 ## Local Development
 
@@ -498,6 +500,7 @@ No AWS secrets are stored in the repository.
 |-- RELEASE_NOTES_v2.3.0.md
 |-- RELEASE_NOTES_v2.5.0.md
 |-- RELEASE_NOTES_v2.5.1.md
+|-- RELEASE_NOTES_v2.6.0.md
 |-- requirements-dev.txt
 |-- samconfig.toml
 `-- template.yaml
@@ -524,10 +527,11 @@ Notes:
 - **v2.4.0**: Added whole-document and simple paragraph/bullet chunked semantic score comparison, with real-world validation showing generic chunked semantic matching did not materially improve scoring.
 - **v2.5.0**: Added an explainable fit analysis MVP in semantic mode with deterministic requirement parsing, resume evidence chunking, requirement-to-evidence scoring, matched requirements, and gaps while preserving existing score fields and keyword-only behavior.
 - **v2.5.1**: Calibrated fit-analysis matching for real Bedrock/Titan score ranges by lowering the matched requirement threshold from `60` to `40` and adding internal score summary diagnostics.
+- **v2.6.0**: Improved evidence retrieval and chunk ranking with requirement-scoped phrase aliases for terms such as `program/project management`, `AI/ML`, `agentic AI`, and content/data systems, plus internal top-3 evidence diagnostics.
 
 ## Future Roadmap
 
-- Improve evidence retrieval and chunk ranking for requirement-to-evidence matching, including better phrase handling for terms such as `program/project management` and `AI/ML`.
+- Expand requirement-to-evidence phrase handling after more real Bedrock/Titan calibration examples.
 - Add richer requirement understanding, such as requirement classification, importance weighting, confidence models, and richer explanations after evidence retrieval quality improves.
 - Add richer resume management, such as upload, multi-resume support, or candidate ranking with explicit privacy controls.
 - Add weighted scoring for skills, certifications, seniority, and domain experience.
