@@ -13,4 +13,4 @@ confirm_changeset = true
 resolve_s3 = true
 region = "us-east-1"
 s3_prefix = "aws-resume-matcher"
-parameter_overrides = "ResumeBucket=\"jon-resume-matcher-dev\" ResumeKey=\"resume/resume.txt\" ApiPath=\"/match\" SemanticMatchingEnabled=\"false\" SemanticEmbeddingProvider=\"bedrock\" BedrockEmbeddingModelId=\"amazon.titan-embed-text-v2:0\" BedrockEmbeddingDimensions=\"512\" EmbeddingCacheBucket=\"\" EmbeddingCachePrefix=\"embeddings/resume\""
+parameter_overrides = "ResumeBucket=\"jon-resume-matcher-dev\" ResumeKey=\"resume/resume.txt\" ApiPath=\"/match\" SemanticMatchingEnabled=\"true\" SemanticEmbeddingProvider=\"bedrock\" BedrockEmbeddingModelId=\"amazon.titan-embed-text-v2:0\" BedrockEmbeddingDimensions=\"512\" EmbeddingCacheBucket=\"\" EmbeddingCachePrefix=\"embeddings/resume\""

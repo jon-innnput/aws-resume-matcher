@@ -39,7 +39,7 @@ DEFAULT_EMBEDDING_CACHE_PREFIX = "embeddings/resume"
 EMBEDDING_CACHE_SCHEMA_VERSION = "1.0"
 DEFAULT_KEYWORD_SCORE_WEIGHT = 0.45
 DEFAULT_SEMANTIC_SCORE_WEIGHT = 0.55
-MATCHED_REQUIREMENT_MIN_SCORE = 60
+MATCHED_REQUIREMENT_MIN_SCORE = 40
 MAX_JOB_DESCRIPTION_URL_BYTES = 1_000_000
 JOB_DESCRIPTION_URL_TIMEOUT_SECONDS = 5
 SUPPORTED_RESUME_EXTENSIONS = {".txt", ".pdf", ".docx"}
@@ -461,7 +461,7 @@ def build_fit_analysis(
     resume_text: str,
     job_description: str,
     embedding_model: Any | None = None,
-) -> dict[str, list[dict[str, Any]]]:
+) -> dict[str, Any]:
     requirement_matches = _score_requirement_evidence(
         _extract_requirement_candidates(job_description),
         _extract_resume_evidence_chunks(resume_text),
@@ -487,10 +487,46 @@ def build_fit_analysis(
                 }
             )
 
+    score_summary = _fit_analysis_score_summary(
+        requirement_matches,
+        matched_requirements,
+        gaps,
+    )
+    logger.info("Fit analysis score summary: %s", json.dumps(score_summary))
+
     return {
         "matched_requirements": matched_requirements,
         "gaps": gaps,
         "_requirement_evidence_scores": requirement_matches,
+        "_score_summary": score_summary,
+    }
+
+
+def _fit_analysis_score_summary(
+    requirement_matches: Sequence[dict[str, Any]],
+    matched_requirements: Sequence[dict[str, Any]],
+    gaps: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    scores = [match["score"] for match in requirement_matches]
+    if not scores:
+        return {
+            "requirement_count": 0,
+            "matched_count": 0,
+            "gap_count": 0,
+            "matched_requirement_min_score": MATCHED_REQUIREMENT_MIN_SCORE,
+            "min_score": None,
+            "max_score": None,
+            "average_score": None,
+        }
+
+    return {
+        "requirement_count": len(requirement_matches),
+        "matched_count": len(matched_requirements),
+        "gap_count": len(gaps),
+        "matched_requirement_min_score": MATCHED_REQUIREMENT_MIN_SCORE,
+        "min_score": min(scores),
+        "max_score": max(scores),
+        "average_score": round(sum(scores) / len(scores)),
     }
 
 
