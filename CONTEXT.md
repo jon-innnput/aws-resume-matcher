@@ -4,9 +4,9 @@
 
 AWS Resume Matcher is a serverless AI portfolio project that scores how well a resume matches a job description. It demonstrates a practical AWS application lifecycle: a Python Lambda API, S3-backed data access, infrastructure as code with AWS SAM, GitHub Actions CI/CD using OIDC authentication, automated testing, and guarded semantic matching with Amazon Bedrock.
 
-The codebase includes v2.6.0 evidence retrieval and chunk ranking improvements, v2.5.1 fit-analysis calibration on top of v2.5.0 explainable fit analysis, the v2.4.0 semantic chunking experiment, v2.3.0 keyword quality improvements, v2.2.0 frontend demo support, v2.1.0 resume and job-description intake expansion, and v2.0.0 guarded semantic matching. Semantic matching is guarded by `SEMANTIC_MATCHING_ENABLED=false` by default, so the deployed Lambda behavior remains keyword-based unless explicitly enabled with the required embedding provider configuration and AWS permissions.
+The codebase includes v2.7.0 narrative evidence chunking and top-k ranking refinement, v2.6.0 evidence retrieval and chunk ranking improvements, v2.5.1 fit-analysis calibration on top of v2.5.0 explainable fit analysis, the v2.4.0 semantic chunking experiment, v2.3.0 keyword quality improvements, v2.2.0 frontend demo support, v2.1.0 resume and job-description intake expansion, and v2.0.0 guarded semantic matching. Semantic matching is guarded by `SEMANTIC_MATCHING_ENABLED=false` by default, so the deployed Lambda behavior remains keyword-based unless explicitly enabled with the required embedding provider configuration and AWS permissions.
 
-The public repository presentation should position the project for recruiters, hiring managers, AWS reviewers, and technical audiences. The README should lead with what the app does, why it exists, current v2.6.0 status, architecture, key features, project evolution, frontend demo usage, demo request/response examples, and then setup/deployment details.
+The public repository presentation should position the project for recruiters, hiring managers, AWS reviewers, and technical audiences. The README should lead with what the app does, why it exists, current v2.7.0 status, architecture, key features, project evolution, frontend demo usage, demo request/response examples, and then setup/deployment details.
 
 ## Business Problem Being Solved
 
@@ -47,7 +47,7 @@ v2.4.0 added an experimental `chunked_semantic_score` field in semantic mode for
 - `.github/workflows/deploy.yml`: Deployment workflow for pushes to `main`; assumes an AWS role through GitHub OIDC and deploys the SAM stack.
 - `frontend/index.html`: Self-contained static frontend demo with embedded CSS and JavaScript.
 - `sample-data/`: Local-only sample data location ignored by Git.
-- `release_notes/`: Archived version-specific release notes such as `RELEASE_NOTES_v2.6.0.md`.
+- `release_notes/`: Archived version-specific release notes such as `RELEASE_NOTES_v2.7.0.md`.
 - `.gitignore`: Excludes local AWS SAM artifacts, virtual environments, Python bytecode, environment files, and sample resume data.
 - `README.md`: Public project overview and contributor-facing setup documentation.
 - `RELEASE_NOTES.md`: Latest-release summary and links to archived version-specific release notes.
@@ -101,6 +101,7 @@ The current `main` branch contains the completed SAM, CI/CD, automated testing, 
 - **v2.5 Explainable Fit Analysis MVP**: Semantic-mode matched requirements, gaps, and supporting resume evidence produced by deterministic requirement parsing, resume evidence chunking, keyword overlap, and semantic similarity.
 - **v2.5.1 Fit Analysis Calibration**: Real Bedrock/Titan score calibration that lowers the matched requirement threshold from `60` to `40` and logs privacy-safe score summaries for future tuning.
 - **v2.6 Evidence Retrieval & Chunk Ranking**: Requirement-scoped phrase alias handling, alias-aware evidence ranking, and internal top-3 evidence diagnostics for better chunk selection while preserving the public response contract.
+- **v2.7 Narrative Evidence Chunking & Top-K Ranking Refinement**: Internal narrative evidence candidates, adjacent evidence windows, top-k reranking diagnostics, and low-value JD boilerplate filters for better fit-analysis evidence selection while preserving the public response contract.
 
 ## v2.4.0 Semantic Experiment Findings
 
@@ -214,7 +215,9 @@ Not managed by `template.yaml`:
 - **Fit-analysis threshold calibration**: v2.5.1 uses `MATCHED_REQUIREMENT_MIN_SCORE = 40` because real semantic-mode testing produced plausible requirement/evidence matches in the low-to-high 40s. The original `60` threshold was too strict for Titan embedding scores and classified strong TPM/AI evidence as gaps.
 - **Privacy-safe fit-analysis diagnostics**: v2.5.1 logs score summary statistics and keeps selected evidence in internal debug structures without exposing extra scoring details in normal API responses.
 - **Scoped evidence aliasing**: v2.6.0 applies phrase alias handling only inside requirement-to-evidence scoring. Global keyword extraction, top-level keyword score behavior, API request shape, and normal public response fields remain unchanged.
-- **Top-k evidence diagnostics**: v2.6.0 retains the top three evidence chunks internally for tests and diagnostics while returning only one public evidence chunk per matched requirement.
+- **Narrative evidence candidates**: v2.7.0 adds internal sentence and adjacent-window resume evidence candidates for fit analysis only. This helps narrative-heavy resumes when one requirement is supported across nearby text without changing generic chunked semantic scoring.
+- **Top-k evidence diagnostics and reranking**: v2.7.0 retains the top three evidence candidates internally with evidence type, source chunks, and word-count diagnostics, then uses those candidates to select the best single public evidence string per matched requirement.
+- **Requirement boilerplate filtering**: v2.7.0 filters obvious low-value job-description chunks such as job IDs, compensation/location metadata, generic company narrative, benefits text, and legal boilerplate before requirement-to-evidence scoring. This remains scoped to requirement extraction and does not alter global keyword extraction.
 - **v2.4 semantic experiment kept separate from production scoring**: `chunked_semantic_score` is returned for comparison in semantic mode, but the final `score` still uses the existing whole-document `semantic_score`.
 - **Do not productionize generic chunked semantic matching**: Real-world v2.4.0 testing showed `semantic_score = 33` and `chunked_semantic_score = 30`, so generic chunking did not materially improve semantic relevance.
 - **Explainability over document similarity**: Candidate fit should be measured through matched requirements, gaps, and supporting resume evidence rather than relying on semantic similarity alone.
@@ -228,8 +231,8 @@ Not managed by `template.yaml`:
 ## Known Limitations
 
 - Production matching is keyword overlap by default; semantic matching is present only as an explicitly enabled guarded path.
-- Requirement parsing is deterministic and intentionally lightweight; v2.6.0 does not classify requirements, infer importance, or use LLM extraction.
-- Public fit-analysis output still returns a single best evidence chunk per matched requirement. Internal diagnostics retain the top three chunks, but normal API consumers do not receive expanded evidence-ranking metadata.
+- Requirement parsing is deterministic and intentionally lightweight; v2.7.0 does not classify requirements, infer importance, or use LLM extraction.
+- Public fit-analysis output still returns a single best evidence chunk per matched requirement. Internal diagnostics retain the top three candidates, but normal API consumers do not receive expanded evidence-ranking metadata.
 - v2.4.0 generic chunked semantic scoring is experimental only and should not be treated as the future production semantic design.
 - The deployment workflow does not yet pass semantic parameter overrides for enabling semantic matching.
 - The API supports one configured resume object at a time when using S3-backed intake.
@@ -241,11 +244,11 @@ Not managed by `template.yaml`:
 
 ## Recommended Next Enhancements
 
-v2.5.0 established the first Explainable Fit Analysis MVP with `matched_requirements`, `gaps`, and supporting resume evidence in semantic mode. v2.5.1 calibrated the initial match threshold, and v2.6.0 improved requirement-to-evidence retrieval for high-signal phrase variants. Future quality work should expand evidence-ranking calibration from more real Bedrock/Titan examples before adding requirement classification, requirement weighting, confidence models, or richer generated explanations.
+v2.5.0 established the first Explainable Fit Analysis MVP with `matched_requirements`, `gaps`, and supporting resume evidence in semantic mode. v2.5.1 calibrated the initial match threshold, v2.6.0 improved requirement-to-evidence retrieval for high-signal phrase variants, and v2.7.0 refined internal evidence candidates and JD boilerplate filtering. Future quality work should expand evidence-ranking calibration from more real Bedrock/Titan examples before adding requirement classification, requirement weighting, confidence models, or richer generated explanations.
 
 Additional future enhancements:
 
-- Expand evidence retrieval calibration and phrase alias coverage after more real semantic-mode testing.
+- Expand evidence retrieval calibration, phrase alias coverage, and narrative evidence-window tuning after more real semantic-mode testing.
 - Add API-level integration tests using SAM local or a deployed test stack.
 - Add resume upload or multi-resume support with explicit privacy controls. This may replace or augment the v2.2 direct-text resume demo path.
 - Add requirement classification, importance weighting, confidence models, and richer explanations after evidence retrieval quality improves.

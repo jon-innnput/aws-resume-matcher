@@ -41,6 +41,9 @@ DEFAULT_KEYWORD_SCORE_WEIGHT = 0.45
 DEFAULT_SEMANTIC_SCORE_WEIGHT = 0.55
 MATCHED_REQUIREMENT_MIN_SCORE = 40
 TOP_EVIDENCE_DIAGNOSTIC_LIMIT = 3
+MAX_RESUME_EVIDENCE_WINDOW_WORDS = 80
+MIN_RESUME_EVIDENCE_WINDOW_WORDS = 8
+LONG_RESUME_CHUNK_WORDS = 45
 MAX_JOB_DESCRIPTION_URL_BYTES = 1_000_000
 JOB_DESCRIPTION_URL_TIMEOUT_SECONDS = 5
 SUPPORTED_RESUME_EXTENSIONS = {".txt", ".pdf", ".docx"}
@@ -65,6 +68,16 @@ WEAK_REQUIREMENT_HEADINGS = {
     "summary",
     "what you will do",
 }
+LOW_VALUE_REQUIREMENT_PATTERNS = [
+    r"\b(?:job|requisition|req|posting)\s*(?:id|number|no\.?)\b",
+    r"\b(?:base\s+pay|salary|compensation|pay\s+range|hourly\s+range)\b",
+    r"\b(?:benefits?|health\s+insurance|dental|vision|401k|paid\s+time\s+off)\b",
+    r"\b(?:equal\s+opportunity|eeo|reasonable\s+accommodation)\b",
+    r"\b(?:applicants?\s+with\s+arrest|criminal\s+histories|background\s+check)\b",
+    r"\b(?:location|work\s+location|workplace\s+type)\s*:",
+    r"\b(?:remote|hybrid|onsite)\s+(?:role|position|work|schedule)\b",
+    r"\b(?:about\s+us|about\s+the\s+company|our\s+company|who\s+we\s+are)\b",
+]
 EVIDENCE_ALIAS_PATTERNS = {
     "program_management": [
         r"\bprogram\s*/\s*project\s+management\b",
@@ -493,7 +506,7 @@ def build_fit_analysis(
 ) -> dict[str, Any]:
     requirement_matches = _score_requirement_evidence(
         _extract_requirement_candidates(job_description),
-        _extract_resume_evidence_chunks(resume_text),
+        _extract_resume_evidence_candidates(resume_text),
         embedding_model,
     )
 
@@ -561,25 +574,34 @@ def _fit_analysis_score_summary(
 
 def _score_requirement_evidence(
     requirements: Sequence[str],
-    evidence_chunks: Sequence[str],
+    evidence_chunks: Sequence[Any],
     embedding_model: Any | None = None,
 ) -> list[dict[str, Any]]:
     if not requirements:
         return []
 
+    evidence_candidates = []
+    for evidence in evidence_chunks:
+        candidate = _coerce_evidence_candidate(evidence)
+        if candidate["evidence"]:
+            evidence_candidates.append(candidate)
+    evidence_texts = [
+        candidate["evidence"]
+        for candidate in evidence_candidates
+    ]
     evidence_keywords = {
         evidence: _extract_keywords(evidence)
-        for evidence in evidence_chunks
+        for evidence in evidence_texts
     }
     evidence_alias_concepts = {
         evidence: _extract_evidence_alias_concepts(evidence)
-        for evidence in evidence_chunks
+        for evidence in evidence_texts
     }
     evidence_embeddings = {}
     if embedding_model is not None:
         evidence_embeddings = {
             evidence: embedding_model.encode(evidence)
-            for evidence in evidence_chunks
+            for evidence in evidence_texts
         }
 
     matches = []
@@ -587,7 +609,7 @@ def _score_requirement_evidence(
         requirement_keywords = _extract_keywords(requirement)
         requirement_embedding = (
             embedding_model.encode(requirement)
-            if embedding_model is not None and evidence_chunks
+            if embedding_model is not None and evidence_candidates
             else None
         )
         best_match = {
@@ -604,7 +626,8 @@ def _score_requirement_evidence(
         requirement_alias_concepts = _extract_evidence_alias_concepts(requirement)
         evidence_rankings = []
 
-        for evidence in evidence_chunks:
+        for candidate in evidence_candidates:
+            evidence = candidate["evidence"]
             matching_keywords = requirement_keywords & evidence_keywords[evidence]
             keyword_score = (
                 round((len(matching_keywords) / len(requirement_keywords)) * 100)
@@ -652,34 +675,74 @@ def _score_requirement_evidence(
                 "alias_score": alias_score,
                 "matching_keywords": sorted(matching_keywords),
                 "matching_aliases": sorted(matching_aliases),
+                "evidence_type": candidate["type"],
+                "source_chunks": candidate["source_chunks"],
+                "word_count": _word_count(evidence),
             }
             evidence_rankings.append(evidence_ranking)
 
-            if score > best_match["score"]:
-                best_match = {
-                    "requirement": requirement,
-                    "score": score,
-                    "evidence": evidence,
-                    "keyword_score": keyword_score,
-                    "semantic_score": semantic_score,
-                    "alias_score": alias_score,
-                    "matching_keywords": sorted(matching_keywords),
-                    "matching_aliases": sorted(matching_aliases),
-                    "top_evidence": [],
-                }
-
-        best_match["top_evidence"] = sorted(
+        ranked_evidence = sorted(
             evidence_rankings,
-            key=lambda ranking: (
-                ranking["score"],
-                ranking["alias_score"],
-                ranking["keyword_score"],
-            ),
+            key=_evidence_rerank_key,
             reverse=True,
-        )[:TOP_EVIDENCE_DIAGNOSTIC_LIMIT]
+        )
+        if ranked_evidence:
+            selected_evidence = ranked_evidence[0]
+            best_match = {
+                "requirement": requirement,
+                "score": selected_evidence["score"],
+                "evidence": selected_evidence["evidence"],
+                "keyword_score": selected_evidence["keyword_score"],
+                "semantic_score": selected_evidence["semantic_score"],
+                "alias_score": selected_evidence["alias_score"],
+                "matching_keywords": selected_evidence["matching_keywords"],
+                "matching_aliases": selected_evidence["matching_aliases"],
+                "evidence_type": selected_evidence["evidence_type"],
+                "source_chunks": selected_evidence["source_chunks"],
+                "top_evidence": [],
+            }
+
+        best_match["top_evidence"] = ranked_evidence[:TOP_EVIDENCE_DIAGNOSTIC_LIMIT]
         matches.append(best_match)
 
     return matches
+
+
+def _coerce_evidence_candidate(evidence: Any) -> dict[str, Any]:
+    if isinstance(evidence, dict):
+        evidence_text = evidence.get("evidence", "")
+        return {
+            "evidence": evidence_text,
+            "type": evidence.get("type", "chunk"),
+            "source_chunks": evidence.get("source_chunks", [evidence_text]),
+        }
+
+    return {
+        "evidence": str(evidence),
+        "type": "chunk",
+        "source_chunks": [str(evidence)],
+    }
+
+
+def _evidence_rerank_key(ranking: dict[str, Any]) -> tuple[int, int, int, int, int, int]:
+    return (
+        ranking["score"],
+        ranking["alias_score"],
+        ranking["keyword_score"],
+        _evidence_length_quality_score(ranking["word_count"]),
+        1 if ranking["evidence_type"] == "window" else 0,
+        -ranking["word_count"],
+    )
+
+
+def _evidence_length_quality_score(word_count: int) -> int:
+    if 8 <= word_count <= 60:
+        return 3
+    if 5 <= word_count <= MAX_RESUME_EVIDENCE_WINDOW_WORDS:
+        return 2
+    if word_count <= 100:
+        return 1
+    return 0
 
 
 def _rank_requirement_evidence_score(
@@ -724,6 +787,8 @@ def _normalize_requirement_candidate(text: str) -> str:
     normalized = candidate.casefold()
     if normalized in WEAK_REQUIREMENT_HEADINGS:
         return ""
+    if _is_low_value_requirement_candidate(candidate):
+        return ""
 
     keywords = _extract_keywords(candidate)
     if len(candidate) < 8 or len(keywords) < 2:
@@ -732,8 +797,91 @@ def _normalize_requirement_candidate(text: str) -> str:
     return candidate
 
 
+def _is_low_value_requirement_candidate(candidate: str) -> bool:
+    normalized = _normalize_text(candidate)
+    if any(re.search(pattern, normalized) for pattern in LOW_VALUE_REQUIREMENT_PATTERNS):
+        return True
+
+    keywords = _extract_keywords(candidate)
+    if len(candidate) > 180 and len(keywords) < 8:
+        return True
+
+    return False
+
+
 def _extract_resume_evidence_chunks(resume_text: str) -> list[str]:
     return _chunk_resume_text(resume_text)
+
+
+def _extract_resume_evidence_candidates(resume_text: str) -> list[dict[str, Any]]:
+    base_chunks = _chunk_resume_text(resume_text)
+    candidates = []
+    seen = set()
+
+    def add_candidate(evidence: str, candidate_type: str, source_chunks: list[str]) -> None:
+        normalized = _normalize_chunk_text(evidence)
+        if not normalized or normalized.casefold() in seen:
+            return
+        seen.add(normalized.casefold())
+        candidates.append(
+            {
+                "evidence": normalized,
+                "type": candidate_type,
+                "source_chunks": source_chunks,
+            }
+        )
+
+    for chunk in base_chunks:
+        add_candidate(chunk, "chunk", [chunk])
+        if _word_count(chunk) >= LONG_RESUME_CHUNK_WORDS:
+            sentence_chunks = _split_sentence_chunks(chunk)
+            for sentence in sentence_chunks:
+                add_candidate(sentence, "sentence", [chunk])
+            for first, second in zip(sentence_chunks, sentence_chunks[1:]):
+                window = f"{first} {second}"
+                if _is_reasonable_evidence_window(window):
+                    add_candidate(window, "window", [first, second])
+
+    for first, second in zip(base_chunks, base_chunks[1:]):
+        window = f"{first} {second}"
+        if _is_reasonable_evidence_window(window) and _should_window_adjacent_chunks(
+            first,
+            second,
+        ):
+            add_candidate(window, "window", [first, second])
+
+    return candidates
+
+
+def _split_sentence_chunks(text: str) -> list[str]:
+    return [
+        normalized
+        for sentence in re.split(r"(?<=[.!?])\s+", text)
+        if (normalized := _normalize_chunk_text(sentence))
+    ]
+
+
+def _is_reasonable_evidence_window(text: str) -> bool:
+    word_count = _word_count(text)
+    return MIN_RESUME_EVIDENCE_WINDOW_WORDS <= word_count <= MAX_RESUME_EVIDENCE_WINDOW_WORDS
+
+
+def _should_window_adjacent_chunks(first: str, second: str) -> bool:
+    first_keywords = _extract_keywords(first)
+    second_keywords = _extract_keywords(second)
+    if first_keywords & second_keywords:
+        return True
+
+    first_aliases = _extract_evidence_alias_concepts(first)
+    second_aliases = _extract_evidence_alias_concepts(second)
+    if first_aliases & second_aliases:
+        return True
+
+    return first.rstrip().endswith(":") and _word_count(first) <= 8
+
+
+def _word_count(text: str) -> int:
+    return len(re.findall(r"\b\w+\b", text))
 
 
 def _chunk_resume_text(text: str) -> list[str]:
