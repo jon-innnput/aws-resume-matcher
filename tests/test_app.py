@@ -382,6 +382,39 @@ def test_build_fit_analysis_matches_requirements_and_gaps(app_module):
         "semantic_score": 100,
         "matching_keywords": ["api", "aws", "lambda"],
     }
+    assert analysis["_score_summary"] == {
+        "requirement_count": 2,
+        "matched_count": 1,
+        "gap_count": 1,
+        "matched_requirement_min_score": 40,
+        "min_score": 0,
+        "max_score": 89,
+        "average_score": 44,
+    }
+
+
+def test_build_fit_analysis_calibrates_mid_range_semantic_matches(app_module):
+    resume_text = "Managed cross-functional execution roadmaps."
+    job_description = "Requirements:\n- Lead complex delivery programs"
+    model = FakeEmbeddingModel(
+        {
+            "Managed cross-functional execution roadmaps.": [1, 0],
+            "Lead complex delivery programs": [0.75, 0.6614378277661477],
+        }
+    )
+
+    analysis = app_module.build_fit_analysis(resume_text, job_description, model)
+
+    assert analysis["matched_requirements"] == [
+        {
+            "requirement": "Lead complex delivery programs",
+            "score": 41,
+            "evidence": "Managed cross-functional execution roadmaps.",
+        }
+    ]
+    assert analysis["gaps"] == []
+    assert analysis["_requirement_evidence_scores"][0]["keyword_score"] == 0
+    assert analysis["_requirement_evidence_scores"][0]["semantic_score"] == 75
 
 
 def test_bedrock_embedding_provider_invokes_titan_v2_with_dimensions(app_module):
