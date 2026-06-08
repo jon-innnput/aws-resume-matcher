@@ -40,6 +40,7 @@ EMBEDDING_CACHE_SCHEMA_VERSION = "1.0"
 DEFAULT_KEYWORD_SCORE_WEIGHT = 0.45
 DEFAULT_SEMANTIC_SCORE_WEIGHT = 0.55
 MATCHED_REQUIREMENT_MIN_SCORE = 40
+TOP_EVIDENCE_DIAGNOSTIC_LIMIT = 3
 MAX_JOB_DESCRIPTION_URL_BYTES = 1_000_000
 JOB_DESCRIPTION_URL_TIMEOUT_SECONDS = 5
 SUPPORTED_RESUME_EXTENSIONS = {".txt", ".pdf", ".docx"}
@@ -63,6 +64,34 @@ WEAK_REQUIREMENT_HEADINGS = {
     "role",
     "summary",
     "what you will do",
+}
+EVIDENCE_ALIAS_PATTERNS = {
+    "program_management": [
+        r"\bprogram\s*/\s*project\s+management\b",
+        r"\bproject\s*/\s*program\s+management\b",
+        r"\bprogram\s+management\b",
+    ],
+    "project_management": [
+        r"\bprogram\s*/\s*project\s+management\b",
+        r"\bproject\s*/\s*program\s+management\b",
+        r"\bproject\s+management\b",
+    ],
+    "ai_ml": [
+        r"\bai\s*/\s*ml\b",
+        r"\bml\s*/\s*ai\b",
+        r"\bartificial\s+intelligence\b",
+        r"\bmachine\s+learning\b",
+    ],
+    "agentic_ai": [
+        r"\bagentic\s+ai\b",
+        r"\bai\s+agent(?:s)?\b",
+        r"\bagent(?:ic)?\s+tool(?:s)?\b",
+    ],
+    "content_data_systems": [
+        r"\bcontent\s*/\s*data\s+systems\b",
+        r"\bcontent\s+systems\b",
+        r"\bdata\s+systems\b",
+    ],
 }
 
 _embedding_provider = None
@@ -542,6 +571,10 @@ def _score_requirement_evidence(
         evidence: _extract_keywords(evidence)
         for evidence in evidence_chunks
     }
+    evidence_alias_concepts = {
+        evidence: _extract_evidence_alias_concepts(evidence)
+        for evidence in evidence_chunks
+    }
     evidence_embeddings = {}
     if embedding_model is not None:
         evidence_embeddings = {
@@ -563,14 +596,27 @@ def _score_requirement_evidence(
             "evidence": "",
             "keyword_score": 0,
             "semantic_score": None,
+            "alias_score": 0,
             "matching_keywords": [],
+            "matching_aliases": [],
+            "top_evidence": [],
         }
+        requirement_alias_concepts = _extract_evidence_alias_concepts(requirement)
+        evidence_rankings = []
 
         for evidence in evidence_chunks:
             matching_keywords = requirement_keywords & evidence_keywords[evidence]
             keyword_score = (
                 round((len(matching_keywords) / len(requirement_keywords)) * 100)
                 if requirement_keywords
+                else 0
+            )
+            matching_aliases = (
+                requirement_alias_concepts & evidence_alias_concepts[evidence]
+            )
+            alias_score = (
+                round((len(matching_aliases) / len(requirement_alias_concepts)) * 100)
+                if requirement_alias_concepts
                 else 0
             )
             semantic_score = None
@@ -586,7 +632,28 @@ def _score_requirement_evidence(
                     )
                     * 100
                 )
-                score = combine_scores(keyword_score, semantic_score)
+                score = _rank_requirement_evidence_score(
+                    keyword_score,
+                    semantic_score,
+                    alias_score,
+                )
+            elif alias_score:
+                score = _rank_requirement_evidence_score(
+                    keyword_score,
+                    None,
+                    alias_score,
+                )
+
+            evidence_ranking = {
+                "evidence": evidence,
+                "score": score,
+                "keyword_score": keyword_score,
+                "semantic_score": semantic_score,
+                "alias_score": alias_score,
+                "matching_keywords": sorted(matching_keywords),
+                "matching_aliases": sorted(matching_aliases),
+            }
+            evidence_rankings.append(evidence_ranking)
 
             if score > best_match["score"]:
                 best_match = {
@@ -595,12 +662,45 @@ def _score_requirement_evidence(
                     "evidence": evidence,
                     "keyword_score": keyword_score,
                     "semantic_score": semantic_score,
+                    "alias_score": alias_score,
                     "matching_keywords": sorted(matching_keywords),
+                    "matching_aliases": sorted(matching_aliases),
+                    "top_evidence": [],
                 }
 
+        best_match["top_evidence"] = sorted(
+            evidence_rankings,
+            key=lambda ranking: (
+                ranking["score"],
+                ranking["alias_score"],
+                ranking["keyword_score"],
+            ),
+            reverse=True,
+        )[:TOP_EVIDENCE_DIAGNOSTIC_LIMIT]
         matches.append(best_match)
 
     return matches
+
+
+def _rank_requirement_evidence_score(
+    keyword_score: int,
+    semantic_score: int | None,
+    alias_score: int,
+) -> int:
+    if semantic_score is None:
+        return min(100, keyword_score + round(alias_score * 0.20))
+
+    baseline_score = combine_scores(keyword_score, semantic_score)
+    return min(100, baseline_score + round(alias_score * 0.20))
+
+
+def _extract_evidence_alias_concepts(text: str) -> set[str]:
+    normalized_text = _normalize_text(text)
+    return {
+        concept
+        for concept, patterns in EVIDENCE_ALIAS_PATTERNS.items()
+        if any(re.search(pattern, normalized_text) for pattern in patterns)
+    }
 
 
 def _extract_requirement_candidates(job_description: str) -> list[str]:
