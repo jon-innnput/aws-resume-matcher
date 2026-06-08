@@ -383,6 +383,8 @@ def test_build_fit_analysis_matches_requirements_and_gaps(app_module):
         "alias_score": 0,
         "matching_keywords": ["api", "aws", "lambda"],
         "matching_aliases": [],
+        "evidence_type": "chunk",
+        "source_chunks": ["Built AWS Lambda APIs with S3 storage."],
         "top_evidence": [
             {
                 "evidence": "Built AWS Lambda APIs with S3 storage.",
@@ -392,6 +394,9 @@ def test_build_fit_analysis_matches_requirements_and_gaps(app_module):
                 "alias_score": 0,
                 "matching_keywords": ["api", "aws", "lambda"],
                 "matching_aliases": [],
+                "evidence_type": "chunk",
+                "source_chunks": ["Built AWS Lambda APIs with S3 storage."],
+                "word_count": 7,
             },
             {
                 "evidence": "Managed retail schedules.",
@@ -401,6 +406,9 @@ def test_build_fit_analysis_matches_requirements_and_gaps(app_module):
                 "alias_score": 0,
                 "matching_keywords": [],
                 "matching_aliases": [],
+                "evidence_type": "chunk",
+                "source_chunks": ["Managed retail schedules."],
+                "word_count": 3,
             },
         ],
     }
@@ -437,6 +445,86 @@ def test_build_fit_analysis_calibrates_mid_range_semantic_matches(app_module):
     assert analysis["gaps"] == []
     assert analysis["_requirement_evidence_scores"][0]["keyword_score"] == 0
     assert analysis["_requirement_evidence_scores"][0]["semantic_score"] == 75
+
+
+def test_extract_resume_evidence_candidates_adds_narrative_sentence_windows(app_module):
+    resume_text = (
+        "Owned AI platform delivery for analytics teams, coordinating roadmap "
+        "execution, vendor intake, and Python automation across multiple internal "
+        "systems. Partnered with stakeholders to translate ambiguous operating "
+        "needs into measurable agentic AI workflows, dashboards, and rollout plans. "
+        "Also maintained weekly reporting cadences, change logs, meeting notes, "
+        "release calendars, support queues, and executive status summaries for "
+        "distributed business operations."
+    )
+
+    candidates = app_module._extract_resume_evidence_candidates(resume_text)
+    windows = [
+        candidate
+        for candidate in candidates
+        if candidate["type"] == "window"
+    ]
+
+    assert windows
+    assert windows[0]["evidence"].startswith("Owned AI platform delivery")
+    assert "Partnered with stakeholders" in windows[0]["evidence"]
+    assert len(windows[0]["source_chunks"]) == 2
+
+
+def test_fit_analysis_selects_adjacent_window_for_narrative_evidence(app_module):
+    resume_text = (
+        "Owned AI platform delivery for analytics teams, coordinating roadmap "
+        "execution, vendor intake, and Python automation across multiple internal "
+        "systems. Partnered with stakeholders to translate ambiguous operating "
+        "needs into measurable agentic AI workflows, dashboards, and rollout plans. "
+        "Also maintained weekly reporting cadences, change logs, meeting notes, "
+        "release calendars, support queues, and executive status summaries for "
+        "distributed business operations."
+    )
+    job_description = (
+        "Requirements:\n"
+        "- Lead AI platform delivery with Python automation, stakeholders, "
+        "agentic AI workflows, and roadmap execution"
+    )
+
+    analysis = app_module.build_fit_analysis(resume_text, job_description)
+    match = analysis["_requirement_evidence_scores"][0]
+
+    assert analysis["matched_requirements"] == [
+        {
+            "requirement": (
+                "Lead AI platform delivery with Python automation, stakeholders, "
+                "agentic AI workflows, and roadmap execution"
+            ),
+            "score": 100,
+            "evidence": match["evidence"],
+        }
+    ]
+    assert match["evidence_type"] == "window"
+    assert "Owned AI platform delivery" in match["evidence"]
+    assert "Partnered with stakeholders" in match["evidence"]
+    assert match["top_evidence"][0]["evidence_type"] == "window"
+
+
+def test_extract_requirement_candidates_filters_verbose_jd_boilerplate(app_module):
+    requirements = app_module._extract_requirement_candidates(
+        """
+        Job ID: 1234567
+        Location: Seattle, WA or Remote role
+        Compensation: Base pay range is $130,000 to $180,000 plus benefits.
+        About the company: We are a global technology organization with a broad mission.
+        We are an equal opportunity employer and provide reasonable accommodation.
+
+        Requirements:
+        - Lead AWS migration programs for enterprise customers
+        - Build stakeholder roadmaps and delivery plans
+        """
+    )
+
+    assert requirements == [
+        "Lead AWS migration programs for enterprise customers",
+        "Build stakeholder roadmaps and delivery plans",
+    ]
 
 
 def test_fit_analysis_ranks_program_project_management_alias_evidence(app_module):
