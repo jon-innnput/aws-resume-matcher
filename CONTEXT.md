@@ -47,8 +47,10 @@ v2.4.0 added an experimental `chunked_semantic_score` field in semantic mode for
 - `.github/workflows/deploy.yml`: Deployment workflow for pushes to `main`; assumes an AWS role through GitHub OIDC and deploys the SAM stack.
 - `frontend/index.html`: Self-contained static frontend demo with embedded CSS and JavaScript.
 - `sample-data/`: Local-only sample data location ignored by Git.
+- `release_notes/`: Archived version-specific release notes such as `RELEASE_NOTES_v2.6.0.md`.
 - `.gitignore`: Excludes local AWS SAM artifacts, virtual environments, Python bytecode, environment files, and sample resume data.
 - `README.md`: Public project overview and contributor-facing setup documentation.
+- `RELEASE_NOTES.md`: Latest-release summary and links to archived version-specific release notes.
 - `CONTEXT.md`: Fast project orientation for contributors and AI coding assistants.
 
 ## Deployment Architecture
@@ -275,6 +277,7 @@ This supports the v2.5.0 direction: build an Explainable Candidate Fit Analyzer 
 
 - Read `README.md`, `CONTEXT.md`, `template.yaml`, `.github/workflows/*.yml`, and `lambda/app.py` before making changes.
 - Keep documentation, application code, infrastructure code, workflows, and deployment configuration changes separated unless the user asks for a cross-cutting update.
+- Keep the repo root focused on high-level project files. Put version-specific release notes in `release_notes/` and keep only the latest-release summary in root `RELEASE_NOTES.md`.
 - Do not commit resume data, secrets, `.env` files, `.aws-sam/`, or `sample-data/`.
 - Do not invent features in documentation; verify the implementation first.
 - Preserve the existing SAM logical IDs unless a migration plan is explicitly requested.

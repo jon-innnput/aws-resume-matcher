@@ -12,6 +12,8 @@ The project exists to demonstrate a practical AWS application lifecycle: serverl
 
 **Current status:** v2.6.0 is complete. The project includes a framework-free static frontend demo, direct-text resume intake for demos, improved keyword extraction quality, a v2.4.0 chunked semantic scoring experiment, semantic-mode explainable fit analysis, calibrated requirement matching for real Bedrock/Titan score ranges, and improved evidence retrieval for phrase variants such as `program/project management` and `AI/ML`. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
 
+The latest release summary is in [`RELEASE_NOTES.md`](RELEASE_NOTES.md). Historical release notes are archived in [`release_notes/`](release_notes/).
+
 ## At A Glance
 
 | Area | Capability |
@@ -491,16 +493,18 @@ No AWS secrets are stored in the repository.
 |   `-- test_template.py
 |-- sample-data/
 |   `-- resume.txt
+|-- release_notes/
+|   |-- RELEASE_NOTES_v2.0.0.md
+|   |-- RELEASE_NOTES_v2.1.0.md
+|   |-- RELEASE_NOTES_v2.2.0.md
+|   |-- RELEASE_NOTES_v2.3.0.md
+|   |-- RELEASE_NOTES_v2.5.0.md
+|   |-- RELEASE_NOTES_v2.5.1.md
+|   `-- RELEASE_NOTES_v2.6.0.md
 |-- .gitignore
 |-- CONTEXT.md
 |-- README.md
-|-- RELEASE_NOTES_v2.0.0.md
-|-- RELEASE_NOTES_v2.1.0.md
-|-- RELEASE_NOTES_v2.2.0.md
-|-- RELEASE_NOTES_v2.3.0.md
-|-- RELEASE_NOTES_v2.5.0.md
-|-- RELEASE_NOTES_v2.5.1.md
-|-- RELEASE_NOTES_v2.6.0.md
+|-- RELEASE_NOTES.md
 |-- requirements-dev.txt
 |-- samconfig.toml
 `-- template.yaml
@@ -510,6 +514,7 @@ Notes:
 
 - `frontend/index.html` is a self-contained static demo with embedded CSS and JavaScript.
 - `sample-data/` is ignored by Git and should not be used for public resume data.
+- `RELEASE_NOTES.md` summarizes the latest release; version-specific notes live under `release_notes/`.
 - `.aws-sam/`, caches, virtual environments, and Python bytecode are ignored.
 
 ## Version History
