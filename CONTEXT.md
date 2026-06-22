@@ -4,6 +4,8 @@
 
 AWS Resume Matcher is a serverless AI portfolio project that scores how well a resume matches a job description. It demonstrates a practical AWS application lifecycle: a Python Lambda API, S3-backed data access, infrastructure as code with AWS SAM, GitHub Actions CI/CD using OIDC authentication, automated testing, and guarded semantic matching with Amazon Bedrock.
 
+The CloudFormation-managed Lambda runtime is Python 3.12. GitHub Actions CI/CD runners use Python 3.13 for test execution, SAM validation/build orchestration, and source compilation.
+
 The codebase includes v2.7.0 narrative evidence chunking and top-k ranking refinement, v2.6.0 evidence retrieval and chunk ranking improvements, v2.5.1 fit-analysis calibration on top of v2.5.0 explainable fit analysis, the v2.4.0 semantic chunking experiment, v2.3.0 keyword quality improvements, v2.2.0 frontend demo support, v2.1.0 resume and job-description intake expansion, and v2.0.0 guarded semantic matching. Semantic matching is guarded by `SEMANTIC_MATCHING_ENABLED=false` by default, so the deployed Lambda behavior remains keyword-based unless explicitly enabled with the required embedding provider configuration and AWS permissions.
 
 The public repository presentation should position the project for recruiters, hiring managers, AWS reviewers, and technical audiences. The README should lead with what the app does, why it exists, current v2.7.0 status, architecture, key features, project evolution, frontend demo usage, demo request/response examples, and then setup/deployment details.
@@ -60,7 +62,7 @@ Deployments are handled by AWS SAM through GitHub Actions or local SAM CLI.
 The SAM template manages:
 
 - An API Gateway HTTP API named by CloudFormation logical ID `ResumeMatcherApi`.
-- A Python 3.13 Lambda function named by CloudFormation logical ID `ResumeMatcherFunction`.
+- A Python 3.12 Lambda function named by CloudFormation logical ID `ResumeMatcherFunction`.
 - Lambda environment variables populated from SAM parameters:
   - `ResumeBucket`
   - `ResumeKey`
@@ -76,6 +78,8 @@ The SAM template manages:
 The resume S3 bucket and object are expected to exist outside this template. SAM grants read access to the configured object but does not create the bucket or upload the resume.
 
 The embedding cache bucket is also expected to exist outside this template. If `EmbeddingCacheBucket` is blank, the function uses the resume bucket for cache objects under `EmbeddingCachePrefix`. A separate cache bucket is cleaner for lifecycle and access management, while reusing the resume bucket is simpler and cost-efficient for this portfolio app.
+
+The active production Lambda should be the CloudFormation-managed function created from `ResumeMatcherFunction` in the `aws-resume-matcher` stack. A standalone AWS Lambda named `resume-matcher` has been observed outside that stack, but the repository does not reference it as an active deployment target.
 
 ## Git Branching Strategy Used So Far
 
@@ -148,7 +152,7 @@ This preserves the concrete resume/job-description use case while creating a mor
 It performs:
 
 - Checkout
-- Python 3.13 setup
+- Python 3.13 setup on the workflow runner
 - AWS SAM CLI setup
 - Test dependency installation from `requirements-dev.txt`
 - `python -m pytest`
@@ -163,7 +167,7 @@ It performs:
 It performs:
 
 - Checkout
-- Python 3.13 setup
+- Python 3.13 setup on the workflow runner
 - AWS SAM CLI setup
 - AWS credential configuration using `aws-actions/configure-aws-credentials`
 - `sam validate --template-file template.yaml`
@@ -185,7 +189,7 @@ Semantic parameters currently use SAM defaults and are not passed by the deploym
 Managed directly by `template.yaml`:
 
 - API Gateway HTTP API
-- Lambda function
+- Lambda function using the Python 3.12 runtime
 - Lambda route integration for `POST /match`
 - Lambda execution policy statement for S3 object reads
 - CloudFormation outputs for API endpoint and Lambda ARN
@@ -284,6 +288,7 @@ This supports the v2.5.0 direction: build an Explainable Candidate Fit Analyzer 
 - Do not commit resume data, secrets, `.env` files, `.aws-sam/`, or `sample-data/`.
 - Do not invent features in documentation; verify the implementation first.
 - Preserve the existing SAM logical IDs unless a migration plan is explicitly requested.
+- Treat Lambda Python 3.12 plus CI/CD runner Python 3.13 as the intentional current runtime split unless a future migration plan explicitly changes it.
 - Be careful with `samconfig.toml`; it contains environment-specific deployment defaults.
 - If modifying deployment workflows, keep OIDC permissions scoped and avoid adding static AWS keys.
 - If adding semantic tests, mock embedding vectors/models, Bedrock responses, and S3 cache interactions so CI does not download model weights or call AWS.

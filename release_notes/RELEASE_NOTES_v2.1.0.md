@@ -28,4 +28,4 @@ v2.1.0 expands resume and job-description intake while preserving the v2.0.0 sco
 - `.venv\Scripts\python.exe -m pytest` (`34 passed`)
 - `sam validate --template-file template.yaml`
 
-Local `sam build --template-file template.yaml --cached --parallel` was not completed because this workstation exposes Python 3.12 on `PATH`, while the SAM template correctly targets Python 3.13.
+At the time of the v2.1.0 release, local `sam build --template-file template.yaml --cached --parallel` was not completed because the workstation exposed Python 3.12 on `PATH`, while the SAM template then targeted Python 3.13. The current SAM Lambda runtime was later reconciled to Python 3.12 in v2.5.1.

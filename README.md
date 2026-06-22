@@ -3,7 +3,7 @@
 [![CI](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml)
 [![Deploy](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml)
 ![Release](https://img.shields.io/badge/release-v2.7.0-blue)
-![Python](https://img.shields.io/badge/python-3.13-blue)
+![Lambda Runtime](https://img.shields.io/badge/lambda-python%203.12-blue)
 ![AWS SAM](https://img.shields.io/badge/IaC-AWS%20SAM-orange)
 
 AWS Resume Matcher is a serverless AI portfolio project that scores how well a resume matches a job description. It supports a static frontend demo, direct-text resume input for demos, `.txt`, `.pdf`, and `.docx` resumes from Amazon S3, direct text, `.txt`, Markdown, and URL-based job descriptions, deterministic keyword scoring, and optional hybrid semantic matching with explainable fit analysis powered by Amazon Bedrock Titan Text Embeddings V2.
@@ -48,7 +48,7 @@ flowchart TD
     User["Client or reviewer"] --> Frontend["Static frontend<br/>HTML / CSS / JS"]
     Frontend -->|"POST /match"| Api["Amazon API Gateway<br/>HTTP API"]
     User -->|"POST /match"| Api
-    Api --> Lambda["AWS Lambda<br/>Python 3.13"]
+    Api --> Lambda["AWS Lambda<br/>Python 3.12"]
 
     Lambda --> ResumeInput["Resume intake<br/>S3 .txt / .pdf / .docx"]
     Lambda --> JobInput["Job description intake<br/>text / .txt / .md / URL"]
@@ -120,7 +120,8 @@ sequenceDiagram
 
 ## Technology Stack
 
-- Python 3.13
+- AWS Lambda Python 3.12 runtime
+- Python 3.13 for GitHub Actions CI/CD runners
 - AWS Lambda
 - Amazon API Gateway HTTP API
 - Amazon S3
@@ -245,7 +246,7 @@ The MVP match threshold is now `40`. This keeps clearly weak evidence in `gaps` 
 
 Install:
 
-- Python 3.13
+- Python 3.13 for local development and CI/CD parity
 - AWS CLI
 - AWS SAM CLI
 - Git
@@ -276,6 +277,8 @@ sample-data/resume.txt
 ```
 
 The `sample-data/` directory is ignored by Git to reduce the risk of publishing personal information. Resume intake supports `.txt`, `.pdf`, and `.docx` objects in S3. Text and Markdown job-description file inputs support `.txt` and `.md`.
+
+The deployed Lambda runtime is Python 3.12, as defined in `template.yaml`. The GitHub Actions CI and deploy jobs use Python 3.13 on the runner to execute tests, SAM validation/build commands, and source compilation.
 
 ## Running Locally
 
@@ -390,6 +393,7 @@ Infrastructure is defined in `template.yaml`. The SAM stack provisions:
 
 - `ResumeMatcherApi`
 - `ResumeMatcherFunction`
+- A Python 3.12 Lambda runtime
 - Lambda environment variables for `RESUME_BUCKET` and `RESUME_KEY`, which may reference `.txt`, `.pdf`, or `.docx` resume objects
 - HTTP API CORS settings for browser-based frontend demo calls
 - IAM policy allowing the function to read only the configured S3 object
@@ -406,7 +410,9 @@ sam build --template-file template.yaml --cached --parallel
 sam deploy
 ```
 
-The repository includes `samconfig.toml` with default build and deploy settings. Review the deploy parameter values before using them in another AWS account. Semantic matching remains disabled by default in `samconfig.toml`.
+The repository includes `samconfig.toml` with default build and deploy settings. Review the deploy parameter values before using them in another AWS account because local SAM defaults can include environment-specific semantic matching overrides.
+
+The CloudFormation-managed Lambda function for this project is the SAM `ResumeMatcherFunction` resource. Standalone Lambda functions outside the `aws-resume-matcher` CloudFormation stack are not part of this repository's managed infrastructure.
 
 ### Finding The Deployed API Endpoint
 
@@ -441,7 +447,7 @@ The repository has two workflows:
 
 - `.github/workflows/ci.yml`
   - Runs on pull requests and pushes to `main`.
-  - Installs Python 3.13 and AWS SAM CLI.
+  - Installs Python 3.13 and AWS SAM CLI on the workflow runner.
   - Installs pytest test dependencies.
   - Runs `python -m pytest`.
   - Runs `sam validate`.
@@ -450,7 +456,7 @@ The repository has two workflows:
 - `.github/workflows/deploy.yml`
   - Runs only on pushes to `main`.
   - Uses GitHub OIDC to assume an AWS deployment role.
-  - Installs Python 3.13 and AWS SAM CLI.
+  - Installs Python 3.13 and AWS SAM CLI on the workflow runner.
   - Runs SAM validation, build, and deployment.
 
 The deployment workflow uses these GitHub repository variables:
@@ -461,7 +467,7 @@ The deployment workflow uses these GitHub repository variables:
 - `RESUME_BUCKET`
 - `RESUME_KEY`
 
-Semantic parameters have defaults in `template.yaml` and `samconfig.toml`; no additional repository variables are required while semantic matching remains disabled.
+Semantic parameters have safe defaults in `template.yaml`; local `samconfig.toml` values may override them for manual deploys. The GitHub deployment workflow does not pass semantic parameter overrides, so workflow-based deployments use the template defaults unless the workflow is changed.
 
 ## GitHub OIDC Authentication
 
