@@ -365,6 +365,14 @@ def test_build_fit_analysis_matches_requirements_and_gaps(app_module):
         {
             "requirement": "Build AWS Lambda APIs",
             "score": 89,
+            "requirement_type": "responsibility",
+            "priority": "high",
+            "confidence": "high",
+            "rationale": (
+                "High priority because the requirement contains technical or "
+                "platform signals. Confidence is high due to strong direct evidence "
+                "overlap."
+            ),
             "evidence": "Built AWS Lambda APIs with S3 storage.",
         }
     ]
@@ -372,8 +380,22 @@ def test_build_fit_analysis_matches_requirements_and_gaps(app_module):
         {
             "requirement": "Use Terraform for infrastructure",
             "score": 0,
+            "requirement_type": "other",
+            "priority": "high",
+            "confidence": "low",
+            "rationale": (
+                "High priority because the requirement contains technical or "
+                "platform signals. No evidence met the calibrated match threshold."
+            ),
         }
     ]
+    assert analysis["fit_summary"] == {
+        "total_requirements": 2,
+        "matched_count": 1,
+        "gap_count": 1,
+        "high_confidence_matches": 1,
+        "high_priority_gaps": 1,
+    }
     assert analysis["_requirement_evidence_scores"][0] == {
         "requirement": "Build AWS Lambda APIs",
         "score": 89,
@@ -385,6 +407,14 @@ def test_build_fit_analysis_matches_requirements_and_gaps(app_module):
         "matching_aliases": [],
         "evidence_type": "chunk",
         "source_chunks": ["Built AWS Lambda APIs with S3 storage."],
+        "requirement_type": "responsibility",
+        "priority": "high",
+        "confidence": "high",
+        "rationale": (
+            "High priority because the requirement contains technical or "
+            "platform signals. Confidence is high due to strong direct evidence "
+            "overlap."
+        ),
         "top_evidence": [
             {
                 "evidence": "Built AWS Lambda APIs with S3 storage.",
@@ -439,6 +469,14 @@ def test_build_fit_analysis_calibrates_mid_range_semantic_matches(app_module):
         {
             "requirement": "Lead complex delivery programs",
             "score": 41,
+            "requirement_type": "responsibility",
+            "priority": "medium",
+            "confidence": "low",
+            "rationale": (
+                "Medium priority because the requirement is specific but not marked "
+                "as mandatory. Confidence is low because support is limited or "
+                "mostly semantic."
+            ),
             "evidence": "Managed cross-functional execution roadmaps.",
         }
     ]
@@ -497,6 +535,14 @@ def test_fit_analysis_selects_adjacent_window_for_narrative_evidence(app_module)
                 "agentic AI workflows, and roadmap execution"
             ),
             "score": 100,
+            "requirement_type": "responsibility",
+            "priority": "high",
+            "confidence": "high",
+            "rationale": (
+                "High priority because the requirement contains technical or "
+                "platform signals. Confidence is high due to strong direct evidence "
+                "overlap."
+            ),
             "evidence": match["evidence"],
         }
     ]
@@ -512,6 +558,10 @@ def test_extract_requirement_candidates_filters_verbose_jd_boilerplate(app_modul
         Job ID: 1234567
         Location: Seattle, WA or Remote role
         Compensation: Base pay range is $130,000 to $180,000 plus benefits.
+        The Application Window Is Expected To Close On June 25, 2026.
+        10 paid holidays per full calendar year.
+        # Senior Engineering Manager, AI
+        ### Meet the Team
         About the company: We are a global technology organization with a broad mission.
         We are an equal opportunity employer and provide reasonable accommodation.
 
@@ -525,6 +575,102 @@ def test_extract_requirement_candidates_filters_verbose_jd_boilerplate(app_modul
         "Lead AWS migration programs for enterprise customers",
         "Build stakeholder roadmaps and delivery plans",
     ]
+
+
+def test_extract_requirement_candidates_filters_sample_job_boilerplate(app_module):
+    job_description = """
+        # Senior Leadership Technical Program Manager - GDC Systems, Tooling, Data, and AI Manager
+        The application window will be open until at least June 25, 2026.
+        Sick Time: 40 hours/year.
+        Holidays: 13 paid days per year.
+        New York City Metro Area: $250,200.00 - $373,700.00
+        **Note:** By applying to this position you will have an opportunity to share your preferred working location.
+        Description The Amazon Web Services Professional Services team is seeking a highly skilled Engagement Manager.
+        Splunk, a Cisco company, is building a safer, more resilient digital world.
+        ### Meet the Team
+
+        Minimum qualifications:
+    - Bachelor's degree in a technical field, or equivalent practical experience.
+    - 10 years of experience in program management.
+    - Deep understanding of how to implement AI-first internal solutions.
+    """
+
+    requirements = app_module._extract_requirement_candidates(job_description)
+
+    assert requirements == [
+        "Bachelor's degree in a technical field, or equivalent practical experience.",
+        "10 years of experience in program management.",
+        "Deep understanding of how to implement AI-first internal solutions.",
+    ]
+
+
+def test_extract_requirement_candidates_splits_recruiting_narrative(app_module):
+    requirements = app_module._extract_requirement_candidates(
+        """
+        Are you an enterprising, innately curious strategic thinker who cuts through
+        the noise, learns new domains fast, and distills complexity into clear,
+        concise action using the latest technology? Someone who combines program
+        management, data fluency, business analysis, and content strategy to
+        multiply impact while communicating with technical and non-technical
+        stakeholders?
+
+        We're looking for a growth-minded Sr. RFx Automation Manager who combines
+        business acumen, critical thinking, and customer obsession to deliver
+        high-impact automation and tooling. You'll own the intersection of process,
+        data, content, and automation while building mechanisms that scale
+        self-service tools and leverage AI/ML tools, including agentic AI and
+        generative AI.
+        """
+    )
+
+    assert requirements == [
+        "Program management experience",
+        "Data fluency and analysis",
+        "Business analysis experience",
+        "Content strategy experience",
+        "Stakeholder communication",
+        "Automation and tooling",
+        "AI/ML tools",
+        "Self-service tooling",
+    ]
+    assert not any("Are you an enterprising" in requirement for requirement in requirements)
+    assert not any("We're looking for" in requirement for requirement in requirements)
+
+
+def test_chunk_resume_text_splits_unicode_bullets(app_module):
+    chunks = app_module._chunk_resume_text(
+        """
+        Skills
+        \u2022 AI & Machine Learning: Generative AI, Agentic AI systems, MLOps
+        \u2022 Cloud & Tools: AWS, Azure, GitHub
+        """
+    )
+
+    assert chunks == [
+        "AI & Machine Learning: Generative AI, Agentic AI systems, MLOps",
+        "Cloud & Tools: AWS, Azure, GitHub",
+    ]
+
+
+def test_requirement_intelligence_classifies_common_requirement_types(app_module):
+    assert app_module._classify_requirement("Must have Python and AWS Lambda") == "required"
+    assert app_module._classify_requirement("Preferred experience with Terraform") == "preferred"
+    assert app_module._classify_requirement("5+ years of program management experience") == "experience"
+    assert app_module._classify_requirement("AWS Solutions Architect certification") == "credential"
+    assert app_module._classify_requirement("Build stakeholder roadmaps") == "responsibility"
+    assert app_module._classify_requirement("Comfortable with ambiguity") == "other"
+
+
+def test_requirement_priority_uses_conservative_deterministic_signals(app_module):
+    assert app_module._requirement_priority("Must have Python", "required") == "high"
+    assert app_module._requirement_priority("CISSP certification", "credential") == "high"
+    assert app_module._requirement_priority("3+ years of delivery experience", "experience") == "high"
+    assert app_module._requirement_priority("Use Terraform for infrastructure", "other") == "high"
+    assert app_module._requirement_priority("Preferred Python experience", "preferred") == "medium"
+    assert app_module._requirement_priority(
+        "Partner with stakeholders in a fast-paced environment",
+        "responsibility",
+    ) == "low"
 
 
 def test_fit_analysis_ranks_program_project_management_alias_evidence(app_module):
@@ -555,6 +701,13 @@ def test_fit_analysis_ranks_program_project_management_alias_evidence(app_module
         {
             "requirement": "5+ years of experience in program/project management",
             "score": 68,
+            "requirement_type": "experience",
+            "priority": "high",
+            "confidence": "high",
+            "rationale": (
+                "High priority because the requirement includes experience depth. "
+                "Confidence is high due to strong direct evidence overlap."
+            ),
             "evidence": (
                 "20+ years of program management experience leading "
                 "cross-functional delivery."
@@ -598,6 +751,13 @@ def test_fit_analysis_ranks_ai_ml_phrase_variants(app_module):
         {
             "requirement": "Experience with AI/ML tools",
             "score": 44,
+            "requirement_type": "experience",
+            "priority": "high",
+            "confidence": "high",
+            "rationale": (
+                "High priority because the requirement includes experience depth. "
+                "Confidence is high due to strong direct evidence overlap."
+            ),
             "evidence": (
                 "Built artificial intelligence and machine learning tooling "
                 "for model evaluation."
@@ -821,10 +981,25 @@ def test_compare_resume_to_job_adds_semantic_fields_when_enabled(
             {
                 "requirement": "Python Lambda Terraform S3",
                 "score": 89,
+                "requirement_type": "other",
+                "priority": "high",
+                "confidence": "high",
+                "rationale": (
+                    "High priority because the requirement contains technical or "
+                    "platform signals. Confidence is high due to strong direct "
+                    "evidence overlap."
+                ),
                 "evidence": "Python AWS Lambda S3 DynamoDB",
             }
         ],
         "gaps": [],
+        "fit_summary": {
+            "total_requirements": 1,
+            "matched_count": 1,
+            "gap_count": 0,
+            "high_confidence_matches": 1,
+            "high_priority_gaps": 0,
+        },
         "semantic_model": "fake-model",
         "semantic_provider": "bedrock",
         "weights": {
