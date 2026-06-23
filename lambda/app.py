@@ -70,13 +70,154 @@ WEAK_REQUIREMENT_HEADINGS = {
 }
 LOW_VALUE_REQUIREMENT_PATTERNS = [
     r"\b(?:job|requisition|req|posting)\s*(?:id|number|no\.?)\b",
+    r"\b(?:application\s+window|job\s+posting\s+may\s+be\s+removed)\b",
     r"\b(?:base\s+pay|salary|compensation|pay\s+range|hourly\s+range)\b",
+    r"\$\d[\d,.]*\s*-\s*\$?\d[\d,.]*",
     r"\b(?:benefits?|health\s+insurance|dental|vision|401k|paid\s+time\s+off)\b",
+    r"\b(?:paid\s+holidays?|sick\s+time|maternity\s+leave|baby\s+bonding|vacation\s+time|time\s+away)\b",
+    r"\bholidays?\s*:\s*\d+\s+paid\s+days?\b",
+    r"\b(?:incentive\s+target|revenue\s+attainment|quota|annual\s+bonuses?)\b",
     r"\b(?:equal\s+opportunity|eeo|reasonable\s+accommodation)\b",
     r"\b(?:applicants?\s+with\s+arrest|criminal\s+histories|background\s+check)\b",
     r"\b(?:location|work\s+location|workplace\s+type)\s*:",
     r"\b(?:remote|hybrid|onsite)\s+(?:role|position|work|schedule)\b",
     r"\b(?:about\s+us|about\s+the\s+company|our\s+company|who\s+we\s+are)\b",
+    r"^description\b.*\b(?:team|organization|seeking|join|role)\b",
+    r"\b(?:organization\s+is\s+a\s+global\s+team|is\s+building\s+a\s+safer|we\s+are\s+cisco|at\s+cisco|fueled\s+by)\b",
+    r"\b(?:about\s+the\s+team|meet\s+the\s+team|why\s+aws|inclusive\s+team\s+culture|work/life\s+balance|mentorship\s+&\s+career\s+growth)\b",
+    r"\b(?:preferred\s+working\s+location|by\s+applying\s+to\s+this\s+position)\b",
+    r"\b(?:message\s+to\s+applicants|employees?\s+are\s+eligible|subject\s+to\s+.+polic(?:y|ies))\b",
+]
+REQUIRED_REQUIREMENT_PATTERNS = [
+    r"\b(?:must|must-have|required|requirement|requires|required qualifications)\b",
+    r"\b(?:need|needs|needed)\s+(?:to|for|experience|skills?)\b",
+]
+PREFERRED_REQUIREMENT_PATTERNS = [
+    r"\b(?:preferred|nice\s+to\s+have|plus|bonus|desired)\b",
+]
+EXPERIENCE_REQUIREMENT_PATTERNS = [
+    r"\b\d+\+?\s*(?:years?|yrs?)\b",
+    r"\b(?:years?|yrs?)\s+of\s+experience\b",
+    r"\b(?:experience|experienced|hands-on|proven track record)\b",
+]
+CREDENTIAL_REQUIREMENT_PATTERNS = [
+    r"\b(?:certification|certified|certificate|license|licensed)\b",
+    r"\b(?:degree|bachelor'?s|master'?s|phd|doctorate)\b",
+    r"\b(?:security clearance|clearance)\b",
+]
+RESPONSIBILITY_REQUIREMENT_PATTERNS = [
+    r"^\s*(?:build|lead|own|manage|develop|design|implement|create|deliver|support|drive|maintain|integrate)\b",
+    r"\b(?:responsible for|you will|work with|partner with)\b",
+]
+TECHNICAL_REQUIREMENT_PATTERNS = [
+    r"\b(?:aws|amazon web services|lambda|s3|api gateway|api|bedrock|dynamodb)\b",
+    r"\b(?:python|terraform|sql|docker|kubernetes|serverless|ci/cd|devops)\b",
+    r"\b(?:ai/ml|artificial intelligence|machine learning|agentic ai|generative ai|embeddings?)\b",
+    r"\b(?:cloud|platform|data|analytics|automation|integration|systems?)\b",
+]
+SECURITY_REQUIREMENT_PATTERNS = [
+    r"\b(?:security|compliance|governance|iam|privacy|risk|audit)\b",
+]
+VAGUE_SOFT_SKILL_PATTERNS = [
+    r"\b(?:communication|collaboration|stakeholder|cross-functional|fast-paced)\b",
+    r"\b(?:detail-oriented|self-starter|passion|team player|problem solving)\b",
+]
+NARRATIVE_REQUIREMENT_MARKERS = [
+    r"\bare\s+you\b",
+    r"\bsomeone\s+who\b",
+    r"\bwe(?:'re|\s+are)\s+looking\s+for\b",
+    r"\bthe\s+ideal\s+candidate\b",
+    r"\bthis\s+is\s+a\s+builder\s+role\b",
+    r"\byou(?:'ll|\s+will)\b",
+]
+MAX_ATOMIC_REQUIREMENTS_PER_NARRATIVE = 6
+ATOMIC_REQUIREMENT_PATTERNS = [
+    (
+        "Program management experience",
+        [
+            r"\bprogram\s*/\s*project\s+management\b",
+            r"\bproject\s*/\s*program\s+management\b",
+            r"\bprogram\s+management\b",
+            r"\bproject\s+management\b",
+        ],
+    ),
+    (
+        "Data fluency and analysis",
+        [
+            r"\bdata\s+fluency\b",
+            r"\bdata-driven\b",
+            r"\banalyz(?:e|ing|es?)\s+data\b",
+            r"\bdata\s+to\s+(?:identify|drive|inform|measure)\b",
+        ],
+    ),
+    (
+        "Business analysis experience",
+        [
+            r"\bbusiness\s+analysis\b",
+            r"\bbusiness\s+acumen\b",
+            r"\bbusiness\s+requirements?\b",
+        ],
+    ),
+    (
+        "Content strategy experience",
+        [
+            r"\bcontent\s+strategy\b",
+            r"\bcontent\s+architecture\b",
+            r"\bcontent\s+management\b",
+            r"\breusable\s+rfx\s+content\b",
+        ],
+    ),
+    (
+        "Stakeholder communication",
+        [
+            r"\bstakeholders?\b",
+            r"\bcommunicat(?:e|ion)\s+complex\s+topics\b",
+            r"\btechnical\s+and\s+non-technical\s+(?:stakeholders|audiences)\b",
+        ],
+    ),
+    (
+        "Automation and tooling",
+        [
+            r"\bautomation\b",
+            r"\btooling\b",
+            r"\bautomate\b",
+            r"\bprogrammatic\s+solutions\b",
+        ],
+    ),
+    (
+        "AI/ML tools",
+        [
+            r"\bai\s*/\s*ml\b",
+            r"\bai-assisted\b",
+            r"\bagentic\s+ai\b",
+            r"\bgenerative\s+ai\b",
+            r"\blow-code\s*/\s*no-code\b",
+        ],
+    ),
+    (
+        "Cloud platform experience",
+        [
+            r"\bcloud\s*/\s*technology\b",
+            r"\bcloud\s+platform\b",
+            r"\baws\s+(?:sales\s+ecosystem|services|cloud)\b",
+        ],
+    ),
+    (
+        "Data pipelines and integrations",
+        [
+            r"\bdata\s+pipelines?\b",
+            r"\bintegrations?\b",
+            r"\bcrm\b",
+            r"\bcontent\s+repositories\b",
+        ],
+    ),
+    (
+        "Self-service tooling",
+        [
+            r"\bself-service\s+(?:tools?|tooling|capabilities)\b",
+            r"\bscale\s+self-service\b",
+        ],
+    ),
 ]
 EVIDENCE_ALIAS_PATTERNS = {
     "program_management": [
@@ -438,6 +579,7 @@ def compare_resume_to_job(
         "missing_keywords": missing_keywords,
         "matched_requirements": fit_analysis["matched_requirements"],
         "gaps": fit_analysis["gaps"],
+        "fit_summary": fit_analysis["fit_summary"],
         "semantic_model": embedding_provider.model_id,
         "semantic_provider": _semantic_embedding_provider_name(),
         "weights": {
@@ -514,33 +656,55 @@ def build_fit_analysis(
     gaps = []
     for match in requirement_matches:
         if match["score"] >= MATCHED_REQUIREMENT_MIN_SCORE and match["evidence"]:
-            matched_requirements.append(
-                {
-                    "requirement": match["requirement"],
-                    "score": match["score"],
-                    "evidence": match["evidence"],
-                }
-            )
+            matched_requirements.append(_public_fit_match(match, is_matched=True))
         else:
-            gaps.append(
-                {
-                    "requirement": match["requirement"],
-                    "score": match["score"],
-                }
-            )
+            gaps.append(_public_fit_match(match, is_matched=False))
 
     score_summary = _fit_analysis_score_summary(
         requirement_matches,
         matched_requirements,
         gaps,
     )
+    fit_summary = _public_fit_summary(requirement_matches, matched_requirements, gaps)
     logger.info("Fit analysis score summary: %s", json.dumps(score_summary))
 
     return {
         "matched_requirements": matched_requirements,
         "gaps": gaps,
+        "fit_summary": fit_summary,
         "_requirement_evidence_scores": requirement_matches,
         "_score_summary": score_summary,
+    }
+
+
+def _public_fit_match(match: dict[str, Any], is_matched: bool) -> dict[str, Any]:
+    public_match = {
+        "requirement": match["requirement"],
+        "score": match["score"],
+        "requirement_type": match["requirement_type"],
+        "priority": match["priority"],
+        "confidence": match["confidence"],
+        "rationale": match["rationale"],
+    }
+    if is_matched:
+        public_match["evidence"] = match["evidence"]
+
+    return public_match
+
+
+def _public_fit_summary(
+    requirement_matches: Sequence[dict[str, Any]],
+    matched_requirements: Sequence[dict[str, Any]],
+    gaps: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "total_requirements": len(requirement_matches),
+        "matched_count": len(matched_requirements),
+        "gap_count": len(gaps),
+        "high_confidence_matches": sum(
+            1 for match in matched_requirements if match["confidence"] == "high"
+        ),
+        "high_priority_gaps": sum(1 for gap in gaps if gap["priority"] == "high"),
     }
 
 
@@ -607,6 +771,7 @@ def _score_requirement_evidence(
     matches = []
     for requirement in requirements:
         requirement_keywords = _extract_keywords(requirement)
+        requirement_intelligence = _requirement_intelligence(requirement)
         requirement_embedding = (
             embedding_model.encode(requirement)
             if embedding_model is not None and evidence_candidates
@@ -622,6 +787,7 @@ def _score_requirement_evidence(
             "matching_keywords": [],
             "matching_aliases": [],
             "top_evidence": [],
+            **requirement_intelligence,
         }
         requirement_alias_concepts = _extract_evidence_alias_concepts(requirement)
         evidence_rankings = []
@@ -700,9 +866,12 @@ def _score_requirement_evidence(
                 "evidence_type": selected_evidence["evidence_type"],
                 "source_chunks": selected_evidence["source_chunks"],
                 "top_evidence": [],
+                **requirement_intelligence,
             }
 
         best_match["top_evidence"] = ranked_evidence[:TOP_EVIDENCE_DIAGNOSTIC_LIMIT]
+        best_match["confidence"] = _requirement_match_confidence(best_match)
+        best_match["rationale"] = _requirement_match_rationale(best_match)
         matches.append(best_match)
 
     return matches
@@ -757,6 +926,137 @@ def _rank_requirement_evidence_score(
     return min(100, baseline_score + round(alias_score * 0.20))
 
 
+def _requirement_intelligence(requirement: str) -> dict[str, str]:
+    requirement_type = _classify_requirement(requirement)
+    priority = _requirement_priority(requirement, requirement_type)
+    return {
+        "requirement_type": requirement_type,
+        "priority": priority,
+        "confidence": "low",
+        "rationale": "",
+    }
+
+
+def _classify_requirement(requirement: str) -> str:
+    normalized = _normalize_text(requirement)
+    if _matches_any_pattern(normalized, CREDENTIAL_REQUIREMENT_PATTERNS):
+        return "credential"
+    if _matches_any_pattern(normalized, PREFERRED_REQUIREMENT_PATTERNS):
+        return "preferred"
+    if _matches_any_pattern(normalized, REQUIRED_REQUIREMENT_PATTERNS):
+        return "required"
+    if _matches_any_pattern(normalized, EXPERIENCE_REQUIREMENT_PATTERNS):
+        return "experience"
+    if _matches_any_pattern(normalized, RESPONSIBILITY_REQUIREMENT_PATTERNS):
+        return "responsibility"
+    return "other"
+
+
+def _requirement_priority(requirement: str, requirement_type: str) -> str:
+    normalized = _normalize_text(requirement)
+    technical_signal_count = _pattern_match_count(
+        normalized,
+        TECHNICAL_REQUIREMENT_PATTERNS,
+    )
+
+    if requirement_type in {"credential", "required"}:
+        return "high"
+    if requirement_type == "preferred":
+        return "medium"
+    if _matches_any_pattern(normalized, EXPERIENCE_REQUIREMENT_PATTERNS):
+        return "high"
+    if _matches_any_pattern(normalized, SECURITY_REQUIREMENT_PATTERNS):
+        return "high"
+    if technical_signal_count >= 1:
+        return "high"
+    if requirement_type == "responsibility" and not _matches_any_pattern(
+        normalized,
+        VAGUE_SOFT_SKILL_PATTERNS,
+    ):
+        return "medium"
+
+    return "low"
+
+
+def _requirement_match_confidence(match: dict[str, Any]) -> str:
+    score = match["score"]
+    keyword_score = match["keyword_score"]
+    semantic_score = match["semantic_score"] or 0
+    alias_score = match["alias_score"]
+    evidence_quality = _evidence_length_quality_score(_word_count(match["evidence"]))
+
+    has_direct_support = keyword_score >= 50 or alias_score >= 50
+    has_strong_alias_support = alias_score >= 100
+    has_semantic_support = semantic_score >= 70
+
+    if evidence_quality >= 2 and (
+        score >= 80
+        or (score >= 55 and has_direct_support)
+        or (score >= 40 and has_strong_alias_support)
+    ):
+        return "high"
+    if (
+        score >= MATCHED_REQUIREMENT_MIN_SCORE
+        and evidence_quality >= 1
+        and (
+            keyword_score >= 25
+            or alias_score >= 50
+            or (score >= 55 and has_semantic_support)
+        )
+    ):
+        return "medium"
+    return "low"
+
+
+def _requirement_match_rationale(match: dict[str, Any]) -> str:
+    priority_reason = _requirement_priority_reason(
+        match["requirement"],
+        match["requirement_type"],
+        match["priority"],
+    )
+    confidence_reason = _confidence_reason(match)
+    return f"{priority_reason} {confidence_reason}"
+
+
+def _requirement_priority_reason(
+    requirement: str,
+    requirement_type: str,
+    priority: str,
+) -> str:
+    normalized = _normalize_text(requirement)
+    if priority == "high":
+        if requirement_type == "credential":
+            return "High priority because the requirement references a credential."
+        if requirement_type == "required":
+            return "High priority because the requirement uses must-have language."
+        if _matches_any_pattern(normalized, EXPERIENCE_REQUIREMENT_PATTERNS):
+            return "High priority because the requirement includes experience depth."
+        if _matches_any_pattern(normalized, SECURITY_REQUIREMENT_PATTERNS):
+            return "High priority because the requirement references security or compliance."
+        return "High priority because the requirement contains technical or platform signals."
+    if priority == "medium":
+        return "Medium priority because the requirement is specific but not marked as mandatory."
+    return "Low priority because the requirement is broad or weakly specified."
+
+
+def _confidence_reason(match: dict[str, Any]) -> str:
+    if match["score"] < MATCHED_REQUIREMENT_MIN_SCORE or not match["evidence"]:
+        return "No evidence met the calibrated match threshold."
+    if match["confidence"] == "high":
+        return "Confidence is high due to strong direct evidence overlap."
+    if match["confidence"] == "medium":
+        return "Confidence is medium because evidence has moderate support."
+    return "Confidence is low because support is limited or mostly semantic."
+
+
+def _matches_any_pattern(text: str, patterns: Sequence[str]) -> bool:
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def _pattern_match_count(text: str, patterns: Sequence[str]) -> int:
+    return sum(len(set(re.findall(pattern, text))) for pattern in patterns)
+
+
 def _extract_evidence_alias_concepts(text: str) -> set[str]:
     normalized_text = _normalize_text(text)
     return {
@@ -770,17 +1070,69 @@ def _extract_requirement_candidates(job_description: str) -> list[str]:
     candidates = []
     seen = set()
     for chunk in _chunk_job_description_text(job_description):
-        candidate = _normalize_requirement_candidate(chunk)
-        if not candidate or candidate.casefold() in seen:
-            continue
-        seen.add(candidate.casefold())
-        candidates.append(candidate)
+        for candidate in _requirement_candidates_from_chunk(chunk):
+            if not candidate or candidate.casefold() in seen:
+                continue
+            seen.add(candidate.casefold())
+            candidates.append(candidate)
 
     return candidates
 
 
+def _requirement_candidates_from_chunk(text: str) -> list[str]:
+    candidate = _normalize_requirement_candidate(text)
+    if not candidate:
+        return []
+
+    if _is_narrative_requirement_candidate(candidate):
+        return _extract_atomic_requirements_from_narrative(candidate)
+
+    return [candidate]
+
+
+def _is_narrative_requirement_candidate(candidate: str) -> bool:
+    normalized = _normalize_text(candidate)
+    word_count = _word_count(candidate)
+    sentence_count = len(_split_sentence_chunks(candidate))
+    has_narrative_marker = _matches_any_pattern(
+        normalized,
+        NARRATIVE_REQUIREMENT_MARKERS,
+    )
+    has_many_concepts = (
+        normalized.count(",") >= 3
+        or normalized.count(";") >= 1
+        or bool(re.search(r"\b(?:combines|including|while|across|intersection)\b", normalized))
+    )
+
+    return (
+        word_count >= 55
+        or (word_count >= 35 and (sentence_count >= 2 or has_narrative_marker))
+        or (word_count >= 25 and has_narrative_marker and has_many_concepts)
+    )
+
+
+def _extract_atomic_requirements_from_narrative(candidate: str) -> list[str]:
+    normalized = _normalize_text(candidate)
+    atomic_requirements = []
+    seen = set()
+    for requirement, patterns in ATOMIC_REQUIREMENT_PATTERNS:
+        if not _matches_any_pattern(normalized, patterns):
+            continue
+
+        normalized_requirement = _normalize_requirement_candidate(requirement)
+        if not normalized_requirement or normalized_requirement.casefold() in seen:
+            continue
+
+        seen.add(normalized_requirement.casefold())
+        atomic_requirements.append(normalized_requirement)
+        if len(atomic_requirements) >= MAX_ATOMIC_REQUIREMENTS_PER_NARRATIVE:
+            break
+
+    return atomic_requirements
+
+
 def _normalize_requirement_candidate(text: str) -> str:
-    candidate = _normalize_chunk_text(text).strip(" -:;")
+    candidate = _normalize_chunk_text(text).strip(" #-:;")
     if not candidate:
         return ""
 
@@ -803,6 +1155,14 @@ def _is_low_value_requirement_candidate(candidate: str) -> bool:
         return True
 
     keywords = _extract_keywords(candidate)
+    word_count = _word_count(candidate)
+    title_like_pattern = (
+        r"\b(?:senior|lead|principal|staff|technical|engineering|automation|program|project)"
+        r"(?:\s+\w+){0,5}\s+(?:manager|engineer|director|specialist)\b"
+    )
+    if word_count <= 12 and re.search(title_like_pattern, normalized):
+        return True
+
     if len(candidate) > 180 and len(keywords) < 8:
         return True
 
@@ -928,7 +1288,7 @@ def _normalize_chunk_text(text: str) -> str:
 def _split_bullet_chunks(text: str) -> list[str]:
     bullet_matches = list(
         re.finditer(
-            r"(?ms)^\s*(?:[-*+]|\d+[.)])\s+(.+?)(?=^\s*(?:[-*+]|\d+[.)])\s+|\Z)",
+            r"(?ms)^\s*(?:[-*+]|\u2022|\uf0b7|\d+[.)])\s+(.+?)(?=^\s*(?:[-*+]|\u2022|\uf0b7|\d+[.)])\s+|\Z)",
             text,
         )
     )

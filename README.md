@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml)
 [![Deploy](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml)
-![Release](https://img.shields.io/badge/release-v2.7.0-blue)
+![Release](https://img.shields.io/badge/release-v2.8.0-blue)
 ![Lambda Runtime](https://img.shields.io/badge/lambda-python%203.12-blue)
 ![AWS SAM](https://img.shields.io/badge/IaC-AWS%20SAM-orange)
 
@@ -10,7 +10,7 @@ AWS Resume Matcher is a serverless AI portfolio project that scores how well a r
 
 The project exists to demonstrate a practical AWS application lifecycle: serverless API design, S3-backed data access, infrastructure as code, CI/CD, least-privilege AWS permissions, automated tests, and an incremental path from deterministic keyword matching to guarded semantic AI matching.
 
-**Current status:** v2.7.0 is complete. The project includes a framework-free static frontend demo, direct-text resume intake for demos, improved keyword extraction quality, a v2.4.0 chunked semantic scoring experiment, semantic-mode explainable fit analysis, calibrated requirement matching for real Bedrock/Titan score ranges, scoped phrase aliasing, narrative resume evidence candidates, top-k evidence reranking, and low-value job-description boilerplate filtering. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
+**Current status:** v2.8.0 is complete. The project includes a framework-free static frontend demo, direct-text resume intake for demos, improved keyword extraction quality, a v2.4.0 chunked semantic scoring experiment, semantic-mode explainable fit analysis, calibrated requirement matching for real Bedrock/Titan score ranges, scoped phrase aliasing, narrative resume evidence candidates, top-k evidence reranking, low-value job-description boilerplate filtering, and deterministic requirement intelligence with calibrated priority and confidence bands. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
 
 The latest release summary is in [`RELEASE_NOTES.md`](RELEASE_NOTES.md). Historical release notes are archived in [`release_notes/`](release_notes/).
 
@@ -36,7 +36,7 @@ The latest release summary is in [`RELEASE_NOTES.md`](RELEASE_NOTES.md). Histori
 - Multiple job-description intake paths, including URL and Markdown/TXT payloads.
 - Deterministic keyword scoring with an optional Bedrock semantic layer.
 - Semantic-mode explainable fit analysis with matched job requirements, likely gaps, and supporting resume evidence.
-- Requirement-to-evidence ranking with scoped phrase alias handling, narrative evidence windows, boilerplate-aware requirement filtering, and internal top-evidence diagnostics.
+- Requirement-to-evidence ranking with scoped phrase alias handling, narrative evidence windows, boilerplate-aware requirement filtering, deterministic requirement intelligence, and internal top-evidence diagnostics.
 - S3 embedding-cache design for avoiding repeated resume embedding work.
 - Least-privilege IAM and repeatable infrastructure through AWS SAM.
 - CI/CD with GitHub Actions, OIDC role assumption, and automated pytest coverage.
@@ -115,6 +115,7 @@ sequenceDiagram
 - GitHub Actions CI for tests, SAM validation, SAM build, and Python compilation.
 - GitHub Actions deployment through OIDC-based AWS role assumption, with no long-lived AWS keys in the repository.
 - Pytest coverage for keyword scoring, request validation, semantic helpers, Bedrock provider behavior, S3 cache behavior, and SAM semantic configuration.
+- Semantic-mode fit analysis with conservative requirement classification, calibrated priority and confidence bands, deterministic rationales, and a compact `fit_summary`.
 - Semantic matching disabled by default to preserve the original keyword-only response shape unless intentionally enabled.
 - Lightweight document parsing with `pypdf` and `python-docx`; URL intake uses Python standard-library networking and HTML text extraction.
 
@@ -191,15 +192,30 @@ curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
     {
       "requirement": "Build serverless APIs with AWS Lambda and API Gateway",
       "score": 84,
+      "requirement_type": "responsibility",
+      "priority": "high",
+      "confidence": "high",
+      "rationale": "High priority because the requirement contains technical or platform signals. Confidence is high due to strong evidence overlap.",
       "evidence": "Built Python APIs on AWS Lambda behind API Gateway."
     }
   ],
   "gaps": [
     {
       "requirement": "Manage infrastructure with Terraform",
-      "score": 18
+      "score": 18,
+      "requirement_type": "responsibility",
+      "priority": "high",
+      "confidence": "low",
+      "rationale": "High priority because the requirement contains technical or platform signals. No evidence met the calibrated match threshold."
     }
   ],
+  "fit_summary": {
+    "total_requirements": 2,
+    "matched_count": 1,
+    "gap_count": 1,
+    "high_confidence_matches": 1,
+    "high_priority_gaps": 1
+  },
   "semantic_model": "amazon.titan-embed-text-v2:0",
   "semantic_provider": "bedrock",
   "weights": {
@@ -215,8 +231,9 @@ curl -X POST https://<api-id>.execute-api.<region>.amazonaws.com/match \
 - `keyword_score`: The percentage of extracted job-description keywords found in the resume. Present when semantic mode is enabled.
 - `semantic_score`: The embedding-similarity score between the resume and job description. Present when semantic mode is enabled.
 - `chunked_semantic_score`: The v2.4.0 experimental chunked semantic score. It is retained for comparison and does not change the final score.
-- `matched_requirements`: Semantic-mode requirement/evidence pairs with high supporting evidence.
-- `gaps`: Semantic-mode requirements with low supporting evidence.
+- `matched_requirements`: Semantic-mode requirement/evidence pairs with supporting evidence, requirement type, priority, confidence, and deterministic rationale.
+- `gaps`: Semantic-mode requirements with low supporting evidence, requirement type, priority, confidence, and deterministic rationale.
+- `fit_summary`: Semantic-mode counts for total requirements, matched requirements, gaps, high-confidence matches, and high-priority gaps.
 
 Exact scores depend on the configured resume object and the submitted job description.
 
@@ -241,6 +258,8 @@ The MVP match threshold is now `40`. This keeps clearly weak evidence in `gaps` 
 - **v2.5.1 Fit Analysis Calibration**: Lowered the matched requirement threshold based on real Bedrock/Titan score distributions and added privacy-safe score summary diagnostics.
 - **v2.6 Evidence Retrieval & Chunk Ranking**: Improved requirement-to-evidence chunk selection with scoped alias handling, alias-aware ranking, and internal top-3 evidence diagnostics while preserving the public response contract.
 - **v2.7 Narrative Evidence Chunking & Top-K Ranking Refinement**: Added internal narrative evidence candidates, adjacent evidence windows, top-k reranking diagnostics, and deterministic JD boilerplate filtering while preserving the public response contract.
+- **v2.7.1 Runtime Documentation Reconciliation**: Reconciled runtime documentation, confirming Lambda Python 3.12, GitHub Actions runner Python 3.13, no planned runtime migration, and the active CloudFormation-managed Lambda.
+- **v2.8 Requirement Intelligence & Confidence Scoring**: Added deterministic semantic-mode requirement classification, calibrated priority and confidence bands, concise rationales, stricter boilerplate filtering, narrative-to-atomic requirement extraction, and a compact `fit_summary` while preserving keyword-only behavior.
 
 ## Local Development
 
@@ -508,7 +527,9 @@ No AWS secrets are stored in the repository.
 |   |-- RELEASE_NOTES_v2.5.0.md
 |   |-- RELEASE_NOTES_v2.5.1.md
 |   |-- RELEASE_NOTES_v2.6.0.md
-|   `-- RELEASE_NOTES_v2.7.0.md
+|   |-- RELEASE_NOTES_v2.7.0.md
+|   |-- RELEASE_NOTES_v2.7.1.md
+|   `-- RELEASE_NOTES_v2.8.0.md
 |-- .gitignore
 |-- CONTEXT.md
 |-- README.md
@@ -542,11 +563,13 @@ Notes:
 - **v2.5.1**: Calibrated fit-analysis matching for real Bedrock/Titan score ranges by lowering the matched requirement threshold from `60` to `40` and adding internal score summary diagnostics.
 - **v2.6.0**: Improved evidence retrieval and chunk ranking with requirement-scoped phrase aliases for terms such as `program/project management`, `AI/ML`, `agentic AI`, and content/data systems, plus internal top-3 evidence diagnostics.
 - **v2.7.0**: Refined semantic-mode evidence selection for narrative-heavy resumes with internal sentence/window candidates, top-k reranking, and deterministic filters for low-value JD chunks such as job IDs, compensation/location text, company narrative, and legal/benefits boilerplate.
+- **v2.7.1**: Reconciled documentation around the intentional runtime split: Lambda remains Python 3.12, GitHub Actions runners use Python 3.13, no runtime migration is planned, and the active production Lambda is the CloudFormation-managed `ResumeMatcherFunction`.
+- **v2.8.0**: Added deterministic semantic-mode requirement classification, calibrated priority and confidence bands, concise rationales, stricter boilerplate filtering, narrative-to-atomic requirement extraction, and a compact `fit_summary` while preserving keyword-only behavior and top-level score semantics.
 
 ## Future Roadmap
 
-- Expand requirement-to-evidence calibration after more real Bedrock/Titan examples, especially around narrative evidence windows and verbose enterprise job descriptions.
-- Add richer requirement understanding, such as requirement classification, importance weighting, confidence models, and richer explanations after evidence retrieval quality improves.
+- Expand requirement intelligence calibration after more real Bedrock/Titan examples, especially around priority bands, confidence bands, narrative evidence windows, and verbose enterprise job descriptions.
+- Add richer requirement understanding, such as required/preferred weighting refinements or expanded rationale models, after more real semantic-mode calibration.
 - Add richer resume management, such as upload, multi-resume support, or candidate ranking with explicit privacy controls.
 - Add weighted scoring for skills, certifications, seniority, and domain experience.
 - Support multiple resumes and candidate ranking.

@@ -6,9 +6,9 @@ AWS Resume Matcher is a serverless AI portfolio project that scores how well a r
 
 The CloudFormation-managed Lambda runtime is Python 3.12. GitHub Actions CI/CD runners use Python 3.13 for test execution, SAM validation/build orchestration, and source compilation.
 
-The codebase includes v2.7.0 narrative evidence chunking and top-k ranking refinement, v2.6.0 evidence retrieval and chunk ranking improvements, v2.5.1 fit-analysis calibration on top of v2.5.0 explainable fit analysis, the v2.4.0 semantic chunking experiment, v2.3.0 keyword quality improvements, v2.2.0 frontend demo support, v2.1.0 resume and job-description intake expansion, and v2.0.0 guarded semantic matching. Semantic matching is guarded by `SEMANTIC_MATCHING_ENABLED=false` by default, so the deployed Lambda behavior remains keyword-based unless explicitly enabled with the required embedding provider configuration and AWS permissions.
+The codebase includes v2.8.0 deterministic requirement intelligence and confidence scoring with real-sample calibration, v2.7.1 runtime documentation reconciliation, v2.7.0 narrative evidence chunking and top-k ranking refinement, v2.6.0 evidence retrieval and chunk ranking improvements, v2.5.1 fit-analysis calibration on top of v2.5.0 explainable fit analysis, the v2.4.0 semantic chunking experiment, v2.3.0 keyword quality improvements, v2.2.0 frontend demo support, v2.1.0 resume and job-description intake expansion, and v2.0.0 guarded semantic matching. Semantic matching is guarded by `SEMANTIC_MATCHING_ENABLED=false` by default, so the deployed Lambda behavior remains keyword-based unless explicitly enabled with the required embedding provider configuration and AWS permissions.
 
-The public repository presentation should position the project for recruiters, hiring managers, AWS reviewers, and technical audiences. The README should lead with what the app does, why it exists, current v2.7.0 status, architecture, key features, project evolution, frontend demo usage, demo request/response examples, and then setup/deployment details.
+The public repository presentation should position the project for recruiters, hiring managers, AWS reviewers, and technical audiences. The README should lead with what the app does, why it exists, current v2.8.0 status, architecture, key features, project evolution, frontend demo usage, demo request/response examples, and then setup/deployment details.
 
 ## Business Problem Being Solved
 
@@ -33,7 +33,7 @@ flowchart TD
 
 The API accepts an optional `resume_text` string for demo-oriented direct-text resume intake. If `resume_text` is omitted, Lambda reads the configured resume object from S3 and extracts text from `.txt`, `.pdf`, or `.docx` resume objects. The API accepts exactly one job-description input: a `job_description` string, a `job_description_file` object for inline `.txt`/`.md` content, or a `job_description_url`. It extracts normalized keywords from both texts, filters stop words and obvious token noise, calculates a percentage score, and returns matching and missing keywords.
 
-When semantic matching is explicitly enabled, the matcher calculates semantic similarity through an embedding provider abstraction and returns hybrid score details. It also parses candidate job requirements, splits resume evidence chunks, scores requirement-to-evidence support with keyword overlap, semantic similarity, and requirement-scoped phrase aliases, and returns `matched_requirements` plus `gaps`. The production-focused provider is Amazon Bedrock Titan Text Embeddings V2 with S3-cached resume embeddings. End-to-end runtime validation has confirmed Bedrock invocation, semantic scoring, S3 cache creation, S3 cache reuse, IAM permissions, and the API Gateway to Lambda to Bedrock flow. The local `sentence-transformers/all-MiniLM-L6-v2` provider remains available for validation. SAM exposes semantic configuration and IAM, but semantic matching remains disabled by default.
+When semantic matching is explicitly enabled, the matcher calculates semantic similarity through an embedding provider abstraction and returns hybrid score details. It also parses candidate job requirements, splits resume evidence chunks, scores requirement-to-evidence support with keyword overlap, semantic similarity, and requirement-scoped phrase aliases, and returns `matched_requirements`, `gaps`, and `fit_summary`. v2.8.0 adds deterministic requirement types, calibrated priority bands, calibrated confidence bands, stricter boilerplate filtering, narrative-to-atomic requirement extraction, and concise rationales to semantic-mode fit output. The production-focused provider is Amazon Bedrock Titan Text Embeddings V2 with S3-cached resume embeddings. End-to-end runtime validation has confirmed Bedrock invocation, semantic scoring, S3 cache creation, S3 cache reuse, IAM permissions, and the API Gateway to Lambda to Bedrock flow. The local `sentence-transformers/all-MiniLM-L6-v2` provider remains available for validation. SAM exposes semantic configuration and IAM, but semantic matching remains disabled by default.
 
 v2.4.0 added an experimental `chunked_semantic_score` field in semantic mode for side-by-side comparison with the current whole-document `semantic_score`. This experiment did not redesign caching, final scoring, API requests, section parsing, or requirement extraction.
 
@@ -49,7 +49,7 @@ v2.4.0 added an experimental `chunked_semantic_score` field in semantic mode for
 - `.github/workflows/deploy.yml`: Deployment workflow for pushes to `main`; assumes an AWS role through GitHub OIDC and deploys the SAM stack.
 - `frontend/index.html`: Self-contained static frontend demo with embedded CSS and JavaScript.
 - `sample-data/`: Local-only sample data location ignored by Git.
-- `release_notes/`: Archived version-specific release notes such as `RELEASE_NOTES_v2.7.0.md`.
+- `release_notes/`: Archived version-specific release notes such as `RELEASE_NOTES_v2.8.0.md`.
 - `.gitignore`: Excludes local AWS SAM artifacts, virtual environments, Python bytecode, environment files, and sample resume data.
 - `README.md`: Public project overview and contributor-facing setup documentation.
 - `RELEASE_NOTES.md`: Latest-release summary and links to archived version-specific release notes.
@@ -89,7 +89,7 @@ The repository has used short-lived feature branches merged into `main`. Observe
 - `feature/github-actions-cicd`
 - `feature/github-oidc-deploy`
 
-The current `main` branch contains the completed SAM, CI/CD, automated testing, v2.0.0 semantic matching, v2.1.0 intake expansion, v2.2.0 frontend demo, v2.3.0 keyword quality improvements, and v2.4.0 semantic experiment phases. The v2.4.0 work was developed on `feature/v2.4-semantic-experiment`, merged, deployed, tested, tagged, and released.
+The current `main` branch contains the completed SAM, CI/CD, automated testing, v2.0.0 semantic matching, v2.1.0 intake expansion, v2.2.0 frontend demo, v2.3.0 keyword quality improvements, v2.4.0 semantic experiment, v2.5.0-v2.7.0 explainable-fit improvements, and v2.7.1 runtime documentation reconciliation. v2.8.0 requirement intelligence work is being developed on `feature/requirement-intelligence`.
 
 ## Version History For Presentation
 
@@ -106,6 +106,8 @@ The current `main` branch contains the completed SAM, CI/CD, automated testing, 
 - **v2.5.1 Fit Analysis Calibration**: Real Bedrock/Titan score calibration that lowers the matched requirement threshold from `60` to `40` and logs privacy-safe score summaries for future tuning.
 - **v2.6 Evidence Retrieval & Chunk Ranking**: Requirement-scoped phrase alias handling, alias-aware evidence ranking, and internal top-3 evidence diagnostics for better chunk selection while preserving the public response contract.
 - **v2.7 Narrative Evidence Chunking & Top-K Ranking Refinement**: Internal narrative evidence candidates, adjacent evidence windows, top-k reranking diagnostics, and low-value JD boilerplate filters for better fit-analysis evidence selection while preserving the public response contract.
+- **v2.7.1 Runtime Documentation Reconciliation**: Documentation-only reconciliation confirming Lambda Python 3.12, GitHub Actions runner Python 3.13, no runtime migration, and the active CloudFormation-managed Lambda.
+- **v2.8 Requirement Intelligence & Confidence Scoring**: Deterministic requirement classification, calibrated priority and confidence bands, stricter boilerplate filtering, narrative-to-atomic requirement extraction, concise rationales, and semantic-mode `fit_summary` while preserving keyword-only behavior.
 
 ## v2.4.0 Semantic Experiment Findings
 
@@ -222,6 +224,8 @@ Not managed by `template.yaml`:
 - **Narrative evidence candidates**: v2.7.0 adds internal sentence and adjacent-window resume evidence candidates for fit analysis only. This helps narrative-heavy resumes when one requirement is supported across nearby text without changing generic chunked semantic scoring.
 - **Top-k evidence diagnostics and reranking**: v2.7.0 retains the top three evidence candidates internally with evidence type, source chunks, and word-count diagnostics, then uses those candidates to select the best single public evidence string per matched requirement.
 - **Requirement boilerplate filtering**: v2.7.0 filters obvious low-value job-description chunks such as job IDs, compensation/location metadata, generic company narrative, benefits text, and legal boilerplate before requirement-to-evidence scoring. This remains scoped to requirement extraction and does not alter global keyword extraction.
+- **Deterministic requirement intelligence**: v2.8.0 classifies semantic-mode requirement candidates into `required`, `preferred`, `responsibility`, `experience`, `credential`, or `other` with conservative heuristics only. It also filters sample-observed job-posting boilerplate such as application windows, benefits, compensation ranges, company narrative, and title-like headers. Oversized recruiting narrative is either converted into a capped set of atomic requirement concepts or dropped when no actionable requirement is found. It does not use LLM extraction, learned weighting, or new dependencies.
+- **Priority and confidence as reviewer aids**: v2.8.0 adds semantic-mode `priority`, `confidence`, `rationale`, and `fit_summary` fields. Confidence calibration allows strong direct keyword or phrase-alias evidence to produce high-confidence matches while keeping semantic-only midrange matches conservative. These are deterministic explanations for reviewers, not statistically learned predictions or hiring decisions.
 - **v2.4 semantic experiment kept separate from production scoring**: `chunked_semantic_score` is returned for comparison in semantic mode, but the final `score` still uses the existing whole-document `semantic_score`.
 - **Do not productionize generic chunked semantic matching**: Real-world v2.4.0 testing showed `semantic_score = 33` and `chunked_semantic_score = 30`, so generic chunking did not materially improve semantic relevance.
 - **Explainability over document similarity**: Candidate fit should be measured through matched requirements, gaps, and supporting resume evidence rather than relying on semantic similarity alone.
@@ -235,7 +239,7 @@ Not managed by `template.yaml`:
 ## Known Limitations
 
 - Production matching is keyword overlap by default; semantic matching is present only as an explicitly enabled guarded path.
-- Requirement parsing is deterministic and intentionally lightweight; v2.7.0 does not classify requirements, infer importance, or use LLM extraction.
+- Requirement parsing and v2.8.0 requirement intelligence are deterministic and intentionally lightweight; classification, priority, confidence, and rationale fields are heuristic reviewer aids, not learned predictions.
 - Public fit-analysis output still returns a single best evidence chunk per matched requirement. Internal diagnostics retain the top three candidates, but normal API consumers do not receive expanded evidence-ranking metadata.
 - v2.4.0 generic chunked semantic scoring is experimental only and should not be treated as the future production semantic design.
 - The deployment workflow does not yet pass semantic parameter overrides for enabling semantic matching.
@@ -248,14 +252,14 @@ Not managed by `template.yaml`:
 
 ## Recommended Next Enhancements
 
-v2.5.0 established the first Explainable Fit Analysis MVP with `matched_requirements`, `gaps`, and supporting resume evidence in semantic mode. v2.5.1 calibrated the initial match threshold, v2.6.0 improved requirement-to-evidence retrieval for high-signal phrase variants, and v2.7.0 refined internal evidence candidates and JD boilerplate filtering. Future quality work should expand evidence-ranking calibration from more real Bedrock/Titan examples before adding requirement classification, requirement weighting, confidence models, or richer generated explanations.
+v2.5.0 established the first Explainable Fit Analysis MVP with `matched_requirements`, `gaps`, and supporting resume evidence in semantic mode. v2.5.1 calibrated the initial match threshold, v2.6.0 improved requirement-to-evidence retrieval for high-signal phrase variants, v2.7.0 refined internal evidence candidates and JD boilerplate filtering, and v2.8.0 added deterministic requirement intelligence and confidence bands. Future quality work should calibrate these heuristics against more real Bedrock/Titan examples before adding richer generated explanations or broader workflow changes.
 
 Additional future enhancements:
 
-- Expand evidence retrieval calibration, phrase alias coverage, and narrative evidence-window tuning after more real semantic-mode testing.
+- Expand evidence retrieval, requirement-priority, confidence-band, phrase-alias, and narrative evidence-window calibration after more real semantic-mode testing.
 - Add API-level integration tests using SAM local or a deployed test stack.
 - Add resume upload or multi-resume support with explicit privacy controls. This may replace or augment the v2.2 direct-text resume demo path.
-- Add requirement classification, importance weighting, confidence models, and richer explanations after evidence retrieval quality improves.
+- Add richer generated explanations or more nuanced requirement weighting only after deterministic v2.8.0 outputs are calibrated.
 - Add structured logging and CloudWatch alarms.
 - Add a dev/prod environment strategy with separate stacks and repository variables.
 - Add API authentication before public exposure.
