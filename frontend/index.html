@@ -197,6 +197,13 @@
       border-color: #c9d0d6;
     }
 
+    .copy-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
     .score-wrap {
       display: grid;
       gap: 16px;
@@ -299,6 +306,136 @@
       font-size: 0.84rem;
     }
 
+    .fit-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .summary-tile {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fbfcfa;
+      min-width: 0;
+    }
+
+    .summary-tile strong {
+      display: block;
+      font-size: 1.2rem;
+      line-height: 1.2;
+    }
+
+    .summary-tile span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.82rem;
+      overflow-wrap: anywhere;
+    }
+
+    .requirement-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .requirement-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcfa;
+    }
+
+    .requirement-card.gap {
+      border-color: #edd1a6;
+      background: #fffaf1;
+    }
+
+    .requirement-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+      font-weight: 750;
+    }
+
+    .requirement-score {
+      color: var(--muted);
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border-radius: 999px;
+      padding: 3px 8px;
+      border: 1px solid #c9d0d6;
+      background: #ffffff;
+      color: #26313d;
+      font-size: 0.78rem;
+      font-weight: 750;
+    }
+
+    .badge.priority-high {
+      color: #7a2f00;
+      border-color: #f0bd8e;
+      background: #fff4e8;
+    }
+
+    .badge.priority-medium {
+      color: #614700;
+      border-color: #e5d28a;
+      background: #fffbe7;
+    }
+
+    .badge.priority-low {
+      color: #33543a;
+      border-color: #b9d7bf;
+      background: #eff8f0;
+    }
+
+    .badge.confidence-high {
+      color: #1d5f2d;
+      border-color: #afd5b8;
+      background: #edf8ef;
+    }
+
+    .badge.confidence-medium {
+      color: #315d83;
+      border-color: #b7d0e6;
+      background: #edf6ff;
+    }
+
+    .badge.confidence-low {
+      color: #7d3129;
+      border-color: #efbbb5;
+      background: #fff1ef;
+    }
+
+    .evidence,
+    .rationale {
+      margin: 8px 0 0;
+      color: #31404f;
+      font-size: 0.9rem;
+    }
+
+    .evidence {
+      border-left: 3px solid var(--green);
+      padding-left: 10px;
+    }
+
+    .rationale {
+      color: var(--muted);
+    }
+
     pre {
       max-height: 260px;
       overflow: auto;
@@ -356,6 +493,10 @@
       textarea {
         min-height: 240px;
       }
+
+      .copy-actions {
+        justify-content: flex-start;
+      }
     }
   </style>
 </head>
@@ -396,7 +537,10 @@
             <button class="primary" type="button" id="matchButton">Match</button>
             <button class="ghost" type="button" id="clearButton">Clear</button>
           </div>
-          <button class="ghost" type="button" id="copyJson" disabled>Copy Result JSON</button>
+          <div class="copy-actions">
+            <button class="ghost hidden" type="button" id="copyReview" disabled>Copy Fit Review</button>
+            <button class="ghost" type="button" id="copyJson" disabled>Copy Result JSON</button>
+          </div>
         </div>
 
         <div id="message" class="message hidden" role="status" aria-live="polite"></div>
@@ -422,6 +566,21 @@
           <div class="result-block">
             <h3>Missing Keywords</h3>
             <div class="chips" id="missingKeywords"></div>
+          </div>
+
+          <div class="result-block hidden" id="fitSummaryBlock">
+            <h3>Fit Summary</h3>
+            <div class="fit-summary-grid" id="fitSummary"></div>
+          </div>
+
+          <div class="result-block hidden" id="matchedRequirementsBlock">
+            <h3>Matched Requirements</h3>
+            <div class="requirement-list" id="matchedRequirements"></div>
+          </div>
+
+          <div class="result-block hidden" id="gapsBlock">
+            <h3>Priority Gaps</h3>
+            <div class="requirement-list" id="gaps"></div>
           </div>
 
           <div class="result-block">
@@ -454,6 +613,7 @@ and semantic search or embeddings. Experience with DynamoDB and CloudWatch is a 
     const matchButton = document.getElementById("matchButton");
     const clearButton = document.getElementById("clearButton");
     const copyJsonButton = document.getElementById("copyJson");
+    const copyReviewButton = document.getElementById("copyReview");
     const loadResumeButton = document.getElementById("loadResume");
     const loadJobButton = document.getElementById("loadJob");
     const message = document.getElementById("message");
@@ -464,6 +624,12 @@ and semantic search or embeddings. Experience with DynamoDB and CloudWatch is a 
     const matchingKeywords = document.getElementById("matchingKeywords");
     const missingKeywords = document.getElementById("missingKeywords");
     const semanticMetrics = document.getElementById("semanticMetrics");
+    const fitSummaryBlock = document.getElementById("fitSummaryBlock");
+    const fitSummary = document.getElementById("fitSummary");
+    const matchedRequirementsBlock = document.getElementById("matchedRequirementsBlock");
+    const matchedRequirements = document.getElementById("matchedRequirements");
+    const gapsBlock = document.getElementById("gapsBlock");
+    const gaps = document.getElementById("gaps");
     const rawJson = document.getElementById("rawJson");
     const statusText = document.getElementById("statusText");
     const statusDot = document.getElementById("statusDot");
@@ -491,6 +657,9 @@ and semantic search or embeddings. Experience with DynamoDB and CloudWatch is a 
       jobInput.value = "";
       latestResult = null;
       copyJsonButton.disabled = true;
+      copyReviewButton.disabled = true;
+      copyReviewButton.classList.add("hidden");
+      resetFitAnalysis();
       results.classList.add("hidden");
       emptyState.classList.remove("hidden");
       setMessage("Inputs cleared.", "info");
@@ -507,6 +676,19 @@ and semantic search or embeddings. Experience with DynamoDB and CloudWatch is a 
         setMessage("Result JSON copied.", "info");
       } catch (error) {
         setMessage("Unable to copy result JSON from this browser context.", "error");
+      }
+    });
+
+    copyReviewButton.addEventListener("click", async () => {
+      if (!latestResult || !hasFitAnalysis(latestResult)) {
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(buildFitReview(latestResult));
+        setMessage("Fit review copied.", "info");
+      } catch (error) {
+        setMessage("Unable to copy fit review from this browser context.", "error");
       }
     });
 
@@ -590,11 +772,14 @@ and semantic search or embeddings. Experience with DynamoDB and CloudWatch is a 
       renderChips(matchingKeywords, result.matching_keywords || [], false);
       renderChips(missingKeywords, result.missing_keywords || [], true);
       renderSemanticMetrics(result);
+      renderFitAnalysis(result);
 
       rawJson.textContent = JSON.stringify(result, null, 2);
       emptyState.classList.add("hidden");
       results.classList.remove("hidden");
       copyJsonButton.disabled = false;
+      copyReviewButton.disabled = !hasFitAnalysis(result);
+      copyReviewButton.classList.toggle("hidden", !hasFitAnalysis(result));
     }
 
     function renderChips(container, items, isMissing) {
@@ -640,6 +825,249 @@ and semantic search or embeddings. Experience with DynamoDB and CloudWatch is a 
         metric.innerHTML = `<strong>${Number(value) || 0}%</strong><span>${label} score</span>`;
         semanticMetrics.appendChild(metric);
       });
+    }
+
+    function renderFitAnalysis(result) {
+      resetFitAnalysis();
+
+      if (!hasFitAnalysis(result)) {
+        return;
+      }
+
+      renderFitSummary(result.fit_summary || {});
+      renderRequirementList(
+        matchedRequirements,
+        matchedRequirementsBlock,
+        rankedMatches(result.matched_requirements || []),
+        false
+      );
+      renderRequirementList(
+        gaps,
+        gapsBlock,
+        rankedGaps(result.gaps || []),
+        true
+      );
+    }
+
+    function resetFitAnalysis() {
+      fitSummary.textContent = "";
+      matchedRequirements.textContent = "";
+      gaps.textContent = "";
+      fitSummaryBlock.classList.add("hidden");
+      matchedRequirementsBlock.classList.add("hidden");
+      gapsBlock.classList.add("hidden");
+    }
+
+    function hasFitAnalysis(result) {
+      return Boolean(
+        result.fit_summary ||
+        (Array.isArray(result.matched_requirements) && result.matched_requirements.length) ||
+        (Array.isArray(result.gaps) && result.gaps.length)
+      );
+    }
+
+    function renderFitSummary(summary) {
+      const tiles = [
+        ["Requirements", summary.total_requirements],
+        ["Matched", summary.matched_count],
+        ["Gaps", summary.gap_count],
+        ["High confidence", summary.high_confidence_matches],
+        ["High priority gaps", summary.high_priority_gaps]
+      ];
+
+      tiles.forEach(([label, value]) => {
+        if (value === undefined) {
+          return;
+        }
+
+        const tile = document.createElement("div");
+        tile.className = "summary-tile";
+
+        const strong = document.createElement("strong");
+        strong.textContent = Number(value) || 0;
+
+        const span = document.createElement("span");
+        span.textContent = label;
+
+        tile.append(strong, span);
+        fitSummary.appendChild(tile);
+      });
+
+      fitSummaryBlock.classList.toggle("hidden", !fitSummary.children.length);
+    }
+
+    function renderRequirementList(container, block, items, isGap) {
+      container.textContent = "";
+      block.classList.toggle("hidden", !items.length);
+
+      items.forEach((item) => {
+        container.appendChild(createRequirementCard(item, isGap));
+      });
+    }
+
+    function createRequirementCard(item, isGap) {
+      const card = document.createElement("article");
+      card.className = "requirement-card" + (isGap ? " gap" : "");
+
+      const titleRow = document.createElement("div");
+      titleRow.className = "requirement-title";
+
+      const title = document.createElement("div");
+      title.textContent = item.requirement || "Requirement";
+
+      const score = document.createElement("div");
+      score.className = "requirement-score";
+      score.textContent = Number.isFinite(Number(item.score)) ? `${Number(item.score)}%` : "";
+
+      titleRow.append(title, score);
+      card.appendChild(titleRow);
+      card.appendChild(createBadgeRow(item, isGap));
+
+      if (item.evidence && !isGap) {
+        const evidence = document.createElement("p");
+        evidence.className = "evidence";
+        evidence.textContent = `Evidence: ${item.evidence}`;
+        card.appendChild(evidence);
+      }
+
+      if (item.rationale) {
+        const rationale = document.createElement("p");
+        rationale.className = "rationale";
+        rationale.textContent = item.rationale;
+        card.appendChild(rationale);
+      }
+
+      return card;
+    }
+
+    function createBadgeRow(item, isGap) {
+      const row = document.createElement("div");
+      row.className = "badge-row";
+
+      [
+        ["Type", item.requirement_type],
+        ["Priority", item.priority],
+        isGap
+          ? ["Evidence", gapEvidenceSupportLabel(item.confidence), item.confidence]
+          : ["Confidence", item.confidence, item.confidence]
+      ].forEach(([label, value, classValue]) => {
+        if (!value) {
+          return;
+        }
+
+        const badge = document.createElement("span");
+        const modifierValue = classValue || value;
+        const classLabel = label === "Evidence" ? "confidence" : label.toLowerCase();
+        const displayValue = label === "Evidence" ? value : formatLabel(value);
+        badge.className = `badge ${classLabel}-${String(modifierValue).toLowerCase()}`;
+        badge.textContent = `${label}: ${displayValue}`;
+        row.appendChild(badge);
+      });
+
+      return row;
+    }
+
+    function rankedMatches(items) {
+      return [...items].sort((left, right) => {
+        return confidenceRank(right.confidence) - confidenceRank(left.confidence) ||
+          priorityRank(right.priority) - priorityRank(left.priority) ||
+          numericScore(right) - numericScore(left);
+      });
+    }
+
+    function rankedGaps(items) {
+      return [...items].sort((left, right) => {
+        return priorityRank(right.priority) - priorityRank(left.priority) ||
+          numericScore(right) - numericScore(left);
+      });
+    }
+
+    function priorityRank(priority) {
+      return { high: 3, medium: 2, low: 1 }[String(priority || "").toLowerCase()] || 0;
+    }
+
+    function confidenceRank(confidence) {
+      return { high: 3, medium: 2, low: 1 }[String(confidence || "").toLowerCase()] || 0;
+    }
+
+    function numericScore(item) {
+      return Number.isFinite(Number(item.score)) ? Number(item.score) : 0;
+    }
+
+    function formatLabel(value) {
+      return String(value)
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    }
+
+    function buildFitReview(result) {
+      const summary = result.fit_summary || {};
+      const matches = rankedMatches(result.matched_requirements || []).slice(0, 3);
+      const gapItems = rankedGaps(result.gaps || []).slice(0, 3);
+      const lines = [
+        "AWS Resume Matcher Fit Review",
+        `Overall score: ${Number(result.score) || 0}%`,
+        ""
+      ];
+
+      if (result.keyword_score !== undefined || result.semantic_score !== undefined) {
+        lines.push(
+          `Keyword score: ${formatOptionalScore(result.keyword_score)}`,
+          `Semantic score: ${formatOptionalScore(result.semantic_score)}`,
+          ""
+        );
+      }
+
+      if (result.fit_summary) {
+        lines.push(
+          "Fit summary:",
+          `- Requirements: ${summary.total_requirements ?? 0}`,
+          `- Matched: ${summary.matched_count ?? 0}`,
+          `- Gaps: ${summary.gap_count ?? 0}`,
+          `- High-confidence matches: ${summary.high_confidence_matches ?? 0}`,
+          `- High-priority gaps: ${summary.high_priority_gaps ?? 0}`,
+          ""
+        );
+      }
+
+      lines.push("Top matched requirements:");
+      if (matches.length) {
+        matches.forEach((match) => {
+          lines.push(
+            `- ${match.requirement} (${formatLabel(match.priority || "unknown")} priority, ${formatLabel(match.confidence || "unknown")} confidence, ${numericScore(match)}%)`
+          );
+          if (match.evidence) {
+            lines.push(`  Evidence: ${match.evidence}`);
+          }
+        });
+      } else {
+        lines.push("- None returned.");
+      }
+
+      lines.push("", "Top gaps:");
+      if (gapItems.length) {
+        gapItems.forEach((gap) => {
+          lines.push(
+            `- ${gap.requirement} (${formatLabel(gap.priority || "unknown")} priority, ${gapEvidenceSupportLabel(gap.confidence)}, ${numericScore(gap)}%)`
+          );
+        });
+      } else {
+        lines.push("- None returned.");
+      }
+
+      return lines.join("\n");
+    }
+
+    function formatOptionalScore(value) {
+      return value === undefined ? "not returned" : `${Number(value) || 0}%`;
+    }
+
+    function gapEvidenceSupportLabel(confidence) {
+      return {
+        high: "Strong evidence support",
+        medium: "Partial evidence support",
+        low: "Weak evidence"
+      }[String(confidence || "").toLowerCase()] || "Evidence support unknown";
     }
   </script>
 </body>

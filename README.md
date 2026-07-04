@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/ci.yml)
 [![Deploy](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml/badge.svg)](https://github.com/jon-innnput/aws-resume-matcher/actions/workflows/deploy.yml)
-![Release](https://img.shields.io/badge/release-v2.8.0-blue)
+![Release](https://img.shields.io/badge/release-v2.9.0-blue)
 ![Lambda Runtime](https://img.shields.io/badge/lambda-python%203.12-blue)
 ![AWS SAM](https://img.shields.io/badge/IaC-AWS%20SAM-orange)
 
@@ -10,7 +10,7 @@ AWS Resume Matcher is a serverless AI portfolio project that scores how well a r
 
 The project exists to demonstrate a practical AWS application lifecycle: serverless API design, S3-backed data access, infrastructure as code, CI/CD, least-privilege AWS permissions, automated tests, and an incremental path from deterministic keyword matching to guarded semantic AI matching.
 
-**Current status:** v2.8.0 is complete. The project includes a framework-free static frontend demo, direct-text resume intake for demos, improved keyword extraction quality, a v2.4.0 chunked semantic scoring experiment, semantic-mode explainable fit analysis, calibrated requirement matching for real Bedrock/Titan score ranges, scoped phrase aliasing, narrative resume evidence candidates, top-k evidence reranking, low-value job-description boilerplate filtering, and deterministic requirement intelligence with calibrated priority and confidence bands. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
+**Current status:** v2.9.0 is complete. The project includes a framework-free static frontend demo, direct-text resume intake for demos, improved keyword extraction quality, a v2.4.0 chunked semantic scoring experiment, semantic-mode explainable fit analysis, calibrated requirement matching for real Bedrock/Titan score ranges, scoped phrase aliasing, narrative resume evidence candidates, top-k evidence reranking, low-value job-description boilerplate filtering, deterministic requirement intelligence with calibrated priority and confidence bands, and reviewer-friendly browser rendering for semantic fit analysis. Keyword matching remains the default production behavior. Semantic matching is implemented behind `SEMANTIC_MATCHING_ENABLED=false` and can be enabled after Bedrock access and embedding-cache permissions are configured in the target AWS account.
 
 The latest release summary is in [`RELEASE_NOTES.md`](RELEASE_NOTES.md). Historical release notes are archived in [`release_notes/`](release_notes/).
 
@@ -35,7 +35,7 @@ The latest release summary is in [`RELEASE_NOTES.md`](RELEASE_NOTES.md). Histori
 - Lightweight `.txt`, `.pdf`, and `.docx` resume extraction in Python.
 - Multiple job-description intake paths, including URL and Markdown/TXT payloads.
 - Deterministic keyword scoring with an optional Bedrock semantic layer.
-- Semantic-mode explainable fit analysis with matched job requirements, likely gaps, and supporting resume evidence.
+- Semantic-mode explainable fit analysis with matched job requirements, likely gaps, supporting resume evidence, reviewer-friendly browser sections, and copyable fit-review summaries.
 - Requirement-to-evidence ranking with scoped phrase alias handling, narrative evidence windows, boilerplate-aware requirement filtering, deterministic requirement intelligence, and internal top-evidence diagnostics.
 - S3 embedding-cache design for avoiding repeated resume embedding work.
 - Least-privilege IAM and repeatable infrastructure through AWS SAM.
@@ -104,7 +104,7 @@ sequenceDiagram
 ## Key Capabilities
 
 - Serverless `POST /match` API backed by API Gateway and AWS Lambda.
-- Static frontend demo for configuring an API endpoint, submitting resume/job text, loading sample inputs, viewing scores, and copying result JSON.
+- Static frontend demo for configuring an API endpoint, submitting resume/job text, loading sample inputs, viewing scores, reviewing semantic fit analysis, copying fit-review summaries, and copying result JSON.
 - Optional direct-text `resume_text` input for demo requests while preserving the configured S3 resume fallback.
 - Resume loaded from a configured private S3 object instead of source control, with `.txt`, `.pdf`, and `.docx` intake support.
 - Job description intake through direct JSON text, inline `.txt` or `.md` file content, or an HTTP/HTTPS URL.
@@ -260,6 +260,7 @@ The MVP match threshold is now `40`. This keeps clearly weak evidence in `gaps` 
 - **v2.7 Narrative Evidence Chunking & Top-K Ranking Refinement**: Added internal narrative evidence candidates, adjacent evidence windows, top-k reranking diagnostics, and deterministic JD boilerplate filtering while preserving the public response contract.
 - **v2.7.1 Runtime Documentation Reconciliation**: Reconciled runtime documentation, confirming Lambda Python 3.12, GitHub Actions runner Python 3.13, no planned runtime migration, and the active CloudFormation-managed Lambda.
 - **v2.8 Requirement Intelligence & Confidence Scoring**: Added deterministic semantic-mode requirement classification, calibrated priority and confidence bands, concise rationales, stricter boilerplate filtering, narrative-to-atomic requirement extraction, and a compact `fit_summary` while preserving keyword-only behavior.
+- **v2.9 Fit Analysis Reviewer Experience**: Added reviewer-friendly frontend rendering for semantic-mode `fit_summary`, matched requirements, priority gaps, badges, evidence snippets, rationales, and copyable fit-review summaries while preserving keyword-only behavior.
 
 ## Local Development
 
@@ -348,7 +349,9 @@ The demo provides:
 - Resume and job-description text areas.
 - Sample resume and sample job-description buttons using fictional content.
 - A match button that calls `POST /match`.
-- Score, keyword, semantic-detail, and raw JSON result displays.
+- Score, keyword, semantic-detail, semantic fit-analysis, and raw JSON result displays.
+- Semantic-mode reviewer sections for `fit_summary`, matched requirements, priority gaps, requirement type, priority, matched confidence, gap evidence support, rationale, and inline evidence snippets.
+- Copy Fit Review for a browser-only summary of score, fit summary, top matched requirements, top gaps, matched confidence, and gap evidence-support indicators.
 - Copy Result JSON for sharing or debugging.
 
 When the resume textarea is filled, the frontend sends `resume_text` with the request. When it is blank, the backend falls back to the configured S3 resume object from `RESUME_BUCKET` and `RESUME_KEY`.
@@ -529,7 +532,8 @@ No AWS secrets are stored in the repository.
 |   |-- RELEASE_NOTES_v2.6.0.md
 |   |-- RELEASE_NOTES_v2.7.0.md
 |   |-- RELEASE_NOTES_v2.7.1.md
-|   `-- RELEASE_NOTES_v2.8.0.md
+|   |-- RELEASE_NOTES_v2.8.0.md
+|   `-- RELEASE_NOTES_v2.9.0.md
 |-- .gitignore
 |-- CONTEXT.md
 |-- README.md
@@ -565,6 +569,7 @@ Notes:
 - **v2.7.0**: Refined semantic-mode evidence selection for narrative-heavy resumes with internal sentence/window candidates, top-k reranking, and deterministic filters for low-value JD chunks such as job IDs, compensation/location text, company narrative, and legal/benefits boilerplate.
 - **v2.7.1**: Reconciled documentation around the intentional runtime split: Lambda remains Python 3.12, GitHub Actions runners use Python 3.13, no runtime migration is planned, and the active production Lambda is the CloudFormation-managed `ResumeMatcherFunction`.
 - **v2.8.0**: Added deterministic semantic-mode requirement classification, calibrated priority and confidence bands, concise rationales, stricter boilerplate filtering, narrative-to-atomic requirement extraction, and a compact `fit_summary` while preserving keyword-only behavior and top-level score semantics.
+- **v2.9.0**: Added reviewer-friendly frontend rendering for semantic-mode fit analysis, including `fit_summary`, matched requirements, priority-sorted gaps, badges, evidence snippets, rationales, and Copy Fit Review while preserving keyword-only behavior.
 
 ## Future Roadmap
 
